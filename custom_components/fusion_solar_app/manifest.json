@@ -1,0 +1,17 @@
+{
+  "domain": "fusion_solar_app",
+  "name": "Fusion Solar App Integration",
+  "codeowners": [
+    "@hcraveiro"
+  ],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/hcraveiro/Home-Assistant-FusionSolar-App",
+  "homekit": {},
+  "iot_class": "local_polling",
+  "requirements": [],
+  "single_config_entry": true,
+  "ssdp": [],
+  "version": "1.0.0",
+  "zeroconf": []
+}
