@@ -7,6 +7,7 @@ Integrate FusionSolar App into your Home Assistant. This Integration was built d
 - [Home Assistant FusionSolar App Integration](#home-assistant-fusionsolar-app-integration)
     - [Installation](#installation)
     - [Configuration](#configuration)
+    - [Card configuration](#card-configuration)
     - [FAQ](#faq)
     - [Credits](#credits)
 
@@ -37,6 +38,175 @@ After setting up the Integration you will get a Device which will have the follo
 * Grid Injection (kW)
 * Battery Percentage (%)
 * Last Authentication Time
+
+## Card configuration
+
+I have configured a card using picture-elements that looks something like this:
+<a href="#"><img src="https://raw.githubusercontent.com/hcraveiro/Home-Assistant-FusionSolar-App/main/assets/card.png"></a>
+
+You can see my configuration here:
+
+```yaml
+type: picture-elements
+elements:
+  - type: state-label
+    entity: sensor.house_load_power
+    style:
+      top: 80%
+      left: 50%
+      color: black
+  - type: state-label
+    entity: sensor.panel_production_power
+    style:
+      top: 30%
+      left: 50%
+      color: black
+  - type: conditional
+    conditions:
+      - entity: sensor.panel_production_power
+        state_not: "0.0"
+    elements:
+      - type: icon
+        entity: sensor.panel_production_power
+        icon: mdi:arrow-down
+        style:
+          top: 48%
+          left: 51%
+          color: orange
+          width: 31px
+          height: 30px
+  - type: conditional
+    conditions:
+      - entity: sensor.battery_consumption_power
+        state_not: "0.0"
+      - entity: sensor.battery_injection_power
+        state: "0.0"
+    elements:
+      - type: state-label
+        entity: sensor.battery_consumption_power
+        style:
+          top: 54%
+          left: 18%
+          color: black
+      - type: icon
+        entity: sensor.battery_consumption_power
+        icon: mdi:arrow-right
+        style:
+          top: 53%
+          left: 40%
+          color: cadetblue
+          width: 30px
+          height: 32px
+  - type: conditional
+    conditions:
+      - entity: sensor.battery_injection_power
+        state_not: "0.0"
+      - entity: sensor.battery_consumption_power
+        state: "0.0"
+    elements:
+      - type: state-label
+        entity: sensor.battery_injection_power
+        style:
+          top: 54%
+          left: 18%
+          color: black
+      - type: icon
+        entity: sensor.battery_consumption_power
+        icon: mdi:arrow-left
+        style:
+          top: 49%
+          left: 40%
+          color: cadetblue
+          width: 30px
+          height: 30px
+  - type: conditional
+    conditions:
+      - entity: sensor.battery_consumption_power
+        state: "0.0"
+      - entity: sensor.battery_injection_power
+        state: "0.0"
+    elements:
+      - type: state-label
+        entity: sensor.battery_consumption_power
+        style:
+          top: 54%
+          left: 18%
+          color: black
+  - type: conditional
+    conditions:
+      - entity: sensor.grid_consumption_power
+        state_not: "0.0"
+      - entity: sensor.grid_injection_power
+        state: "0.0"
+    elements:
+      - type: state-label
+        entity: sensor.grid_consumption_power
+        style:
+          top: 55%
+          left: 83%
+          color: black
+      - type: icon
+        entity: sensor.grid_consumption_power
+        icon: mdi:arrow-left
+        style:
+          top: 52%
+          left: 60%
+          color: cadetblue
+          width: 30px
+          height: 26px
+  - type: conditional
+    conditions:
+      - entity: sensor.grid_injection_power
+        state_not: "0.0"
+      - entity: sensor.grid_consumption_power
+        state: "0.0"
+    elements:
+      - type: state-label
+        entity: sensor.grid_injection_power
+        style:
+          top: 55%
+          left: 83%
+          color: black
+      - type: icon
+        entity: sensor.grid_injection_power
+        icon: mdi:arrow-right
+        style:
+          top: 49%
+          left: 60%
+          color: cadetblue
+          width: 30px
+          height: 28px
+  - type: conditional
+    conditions:
+      - entity: sensor.grid_consumption_power
+        state: "0.0"
+      - entity: sensor.grid_injection_power
+        state: "0.0"
+    elements:
+      - type: state-label
+        entity: sensor.grid_consumption_power
+        style:
+          top: 55%
+          left: 83%
+          color: black
+  - type: state-label
+    entity: sensor.battery_percentage
+    style:
+      top: 45%
+      left: 15%
+      color: black
+      width: 21px
+      height: 33px
+  - type: state-label
+    entity: sensor.house_load_last_updated_label
+    style:
+      top: 97%
+      left: 21%
+      color: grey
+image: /local/fusionsolar.png
+```
+
+You can find the fusionsolar.png in assets folder. You need to put it in 'www' folder (inside /config).
 
 ## FAQ
 
