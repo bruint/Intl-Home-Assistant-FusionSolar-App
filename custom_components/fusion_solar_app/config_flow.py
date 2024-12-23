@@ -1,4 +1,4 @@
-"""Config flow for Fusion Solar integration."""
+"""Config flow for Fusion Solar App Integration."""
 
 from __future__ import annotations
 
@@ -22,7 +22,8 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 
 from .api import FusionSolarAPI, APIAuthError, APIConnectionError
-from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, MIN_SCAN_INTERVAL
+from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, MIN_SCAN_INTERVAL, STATION_KEY
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,7 +31,8 @@ _LOGGER = logging.getLogger(__name__)
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_USERNAME, description={"suggested_value": ""}): str,
-        vol.Required(CONF_PASSWORD, description={"suggested_value": ""}): str
+        vol.Required(CONF_PASSWORD, description={"suggested_value": ""}): str,
+        vol.Required(STATION_KEY, description={"suggested_value": ""}): str
     }
 )
 
@@ -40,15 +42,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
 
     Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
     """
-    # TODO validate the data can be used to set up a connection.
-
-    # If your PyPI package is not built with async, pass your methods
-    # to the executor:
-    # await hass.async_add_executor_job(
-    #     your_validate_func, data[CONF_USERNAME], data[CONF_PASSWORD]
-    # )
-
-    api = FusionSolarAPI(data[CONF_USERNAME], data[CONF_PASSWORD])
+    api = FusionSolarAPI(data[CONF_USERNAME], data[CONF_PASSWORD], data[STATION_KEY])
     try:
         await hass.async_add_executor_job(api.login)
         # If you cannot connect, raise CannotConnect
@@ -57,11 +51,11 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
         raise InvalidAuth from err
     except APIConnectionError as err:
         raise CannotConnect from err
-    return {"title": f"Fusion Solar WebApp Integration"}
+    return {"title": f"Fusion Solar App Integration"}
 
 
 class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Fusion Solar Integration."""
+    """Handle a config flow for Fusion Solar App Integration."""
 
     VERSION = 1
     _input_data: dict[str, Any]
@@ -143,7 +137,8 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Required(CONF_USERNAME, default=config_entry.data[CONF_USERNAME]): str,
-                    vol.Required(CONF_PASSWORD): str
+                    vol.Required(CONF_PASSWORD): str,
+                    vol.Required(STATION_KEY, default=config_entry.data[STATION_KEY]): str
                 }
             ),
             errors=errors,

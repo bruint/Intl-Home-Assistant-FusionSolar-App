@@ -1,4 +1,4 @@
-"""Interfaces with the Integration 101 Template api sensors."""
+"""Interfaces with the Fusion Solar App api sensors."""
 
 import logging
 from datetime import datetime

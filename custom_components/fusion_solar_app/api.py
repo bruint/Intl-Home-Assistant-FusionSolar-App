@@ -1,8 +1,4 @@
-"""FusionSolarAPI Placeholder.
-
-You should create your api seperately and have it hosted on PYPI.  This is included here for the sole purpose
-of making this example code executable.
-"""
+"""Fusion Solar App API """
 
 from dataclasses import dataclass
 from enum import StrEnum
@@ -51,12 +47,13 @@ class Device:
 
 
 class FusionSolarAPI:
-    """Class for example API."""
+    """Class for Fusion Solar App API."""
 
-    def __init__(self, user: str, pwd: str) -> None:
+    def __init__(self, user: str, pwd: str, station: str) -> None:
         """Initialise."""
         self.user = user
         self.pwd = pwd
+        self.station = station
         self.dp_session = ""
         self.connected: bool = False
         self.last_session_time: datetime | None = None
@@ -94,9 +91,9 @@ class FusionSolarAPI:
             "Content-Type": "application/json",
             "accept-encoding": "gzip, deflate, br, zstd",
             "connection": "keep-alive",
-            "host": "eu5.fusionsolar.huawei.com",
-            "origin": "https://eu5.fusionsolar.huawei.com",
-            "referer": "https://eu5.fusionsolar.huawei.com/unisso/login.action",
+            "host": LOGIN_HEADERS_HOST,
+            "origin": LOGIN_REDIRECT_URL,
+            "referer": LOGIN_HEADERS_1_STEP_REFERER,
             "x-requested-with": "XMLHttpRequest"
         }
         
@@ -109,7 +106,6 @@ class FusionSolarAPI:
                 redirect_info = login_response['respMultiRegionName'][1]  # Extract redirect URL
                 region_name = login_response['respMultiRegionName'][0]
         
-                # Step 5: Invoke /rest/dp/web/v1/auth/on-sso-credential-ready
                 redirect_url = f"{LOGIN_REDIRECT_URL}{redirect_info}"
                 _LOGGER.debug("Login Response: %s", redirect_url)
 
@@ -122,7 +118,8 @@ class FusionSolarAPI:
                 }
         
                 redirect_response = requests.get(redirect_url, headers=redirect_headers, allow_redirects=False)
-        
+                _LOGGER.debug("Redirect Response: %s", redirect_response.text)
+
                 if redirect_response.status_code == 200 or redirect_response.status_code == 302:
                     cookies = redirect_response.headers.get('Set-Cookie')
                     if cookies:
@@ -180,7 +177,7 @@ class FusionSolarAPI:
         while not self._stop_event.is_set():
             if self.connected == False:
                 self._renew_session()
-            time.sleep(60)  # Check every 10 seconds
+            time.sleep(60)  # Check every 60 seconds
 
     def _start_session_monitor(self) -> None:
         """Start the session monitor thread."""
@@ -201,18 +198,16 @@ class FusionSolarAPI:
             "dp-session": self.dp_session,
         }
         
-        # Headers capturados dos requests
         headers = {
-            "Accept": "application/json",  # Ajustado para JSON
+            "Accept": "application/json",
             "Accept-Encoding": "gzip, deflate, br, zstd",
             "Accept-Language": "en-GB,en;q=0.9",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         }
         
-        # Parâmetros opcionais da requisição (decodificado para maior clareza)
-        params = {"stationDn": unquote("NE%3D141928922")}
+        # Fusion Solar App Station parameter
+        params = {"stationDn": unquote(self.station)}
         
-        # Fazer a requisição GET com os cookies e headers
         response = requests.get(DATA_URL, headers=headers, cookies=cookies, params=params)
 
         output = {
@@ -238,7 +233,7 @@ class FusionSolarAPI:
                 self.connected = False
                 raise APIDataStructureError("Error on data structure!")
 
-            # Processar nodes para extrair informações
+            # Process nodes to gather required information
             flow_data_nodes = data["data"]["flow"].get("nodes", [])
             flow_data_links = data["data"]["flow"].get("links", [])
             node_map = {

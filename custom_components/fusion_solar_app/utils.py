@@ -1,3 +1,5 @@
+"""Utils functions."""
+
 import base64
 import secrets
 from cryptography.hazmat.primitives import hashes
