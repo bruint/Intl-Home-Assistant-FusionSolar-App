@@ -13,15 +13,19 @@
     "step": {
       "user": {
         "data": {
-          "password": "Password",
           "username": "Username",
+          "password": "Password",
+          "login_host": "Login Host",
+          "data_host": "Data Host",
           "station": "Station"
         }
       },
       "reconfigure": {
         "data": {
-          "password": "Password",
           "username": "Username",
+          "password": "Password",
+          "login_host": "Login Host",
+          "data_host": "Data Host",
           "station": "Station"
         }
       }

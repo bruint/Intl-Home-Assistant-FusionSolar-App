@@ -10,7 +10,7 @@ import json
 from typing import Dict, Optional
 from urllib.parse import unquote
 from datetime import datetime, timedelta, timezone
-from .const import DOMAIN, PUBKEY_URL, LOGIN_REDIRECT_URL, LOGIN_HEADERS_HOST, LOGIN_HEADERS_ORIGIN, LOGIN_HEADERS_1_STEP_REFERER, LOGIN_HEADERS_2_STEP_REFERER, LOGIN_VALIDATE_USER_URL, DATA_URL
+from .const import DOMAIN, PUBKEY_URL, LOGIN_HEADERS_1_STEP_REFERER, LOGIN_HEADERS_2_STEP_REFERER, LOGIN_VALIDATE_USER_URL, DATA_URL
 from .utils import extract_numeric, encrypt_password, generate_nonce
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,11 +49,13 @@ class Device:
 class FusionSolarAPI:
     """Class for Fusion Solar App API."""
 
-    def __init__(self, user: str, pwd: str, station: str) -> None:
+    def __init__(self, user: str, pwd: str, login_host: str, data_host: str, station: str) -> None:
         """Initialise."""
         self.user = user
         self.pwd = pwd
         self.station = station
+        self.login_host = login_host
+        self.data_host = data_host
         self.dp_session = ""
         self.connected: bool = False
         self.last_session_time: datetime | None = None
@@ -68,7 +70,7 @@ class FusionSolarAPI:
     def login(self) -> bool:
         """Connect to api."""
         
-        response = requests.get(PUBKEY_URL)
+        response = requests.get(f"https://{self.login_host}{PUBKEY_URL}")
         pubkey_data = response.json()
         
         pub_key_pem = pubkey_data['pubKey']
@@ -80,7 +82,7 @@ class FusionSolarAPI:
         
         encrypted_password = encrypt_password(pub_key_pem, self.pwd) + version
 
-        login_url = f"{LOGIN_VALIDATE_USER_URL}?timeStamp={time_stamp}&nonce={nonce}"
+        login_url = f"https://{self.login_host}{LOGIN_VALIDATE_USER_URL}?timeStamp={time_stamp}&nonce={nonce}"
         payload = {
             "organizationName": "",
             "password": encrypted_password,
@@ -91,9 +93,9 @@ class FusionSolarAPI:
             "Content-Type": "application/json",
             "accept-encoding": "gzip, deflate, br, zstd",
             "connection": "keep-alive",
-            "host": LOGIN_HEADERS_HOST,
-            "origin": LOGIN_REDIRECT_URL,
-            "referer": LOGIN_HEADERS_1_STEP_REFERER,
+            "host": self.login_host,
+            "origin": f"https://{self.login_host}",
+            "referer": f"https://{self.login_host}{LOGIN_HEADERS_1_STEP_REFERER}",
             "x-requested-with": "XMLHttpRequest"
         }
         
@@ -106,15 +108,15 @@ class FusionSolarAPI:
                 redirect_info = login_response['respMultiRegionName'][1]  # Extract redirect URL
                 region_name = login_response['respMultiRegionName'][0]
         
-                redirect_url = f"{LOGIN_REDIRECT_URL}{redirect_info}"
+                redirect_url = f"https://{self.login_host}{redirect_info}"
                 _LOGGER.debug("Login Response: %s", redirect_url)
 
                 redirect_headers = {
                     "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
                     "accept-encoding": "gzip, deflate, br, zstd",
                     "connection": "keep-alive",
-                    "host": LOGIN_HEADERS_HOST,
-                    "referer": LOGIN_HEADERS_2_STEP_REFERER
+                    "host": "{self.login_host}",
+                    "referer": f"https://{self.login_host}{LOGIN_HEADERS_2_STEP_REFERER}"
                 }
         
                 redirect_response = requests.get(redirect_url, headers=redirect_headers, allow_redirects=False)
@@ -208,7 +210,7 @@ class FusionSolarAPI:
         # Fusion Solar App Station parameter
         params = {"stationDn": unquote(self.station)}
         
-        response = requests.get(DATA_URL, headers=headers, cookies=cookies, params=params)
+        response = requests.get(f"https://{self.data_host}{DATA_URL}", headers=headers, cookies=cookies, params=params)
 
         output = {
             "panel_production_power": None,
@@ -227,7 +229,7 @@ class FusionSolarAPI:
                 _LOGGER.debug("Get Data Response: %s", data)
             except Exception as ex:
                 self.connected = False
-                raise APIAuthError("Error processing responde: JSON format invalid!\r\nCookies: %s\r\nHeader: %s\r\n%s", cookies, headers, response.text)
+                raise APIAuthError("Error processing response: JSON format invalid!\r\nCookies: %s\r\nHeader: %s\r\n%s", cookies, headers, response.text)
 
             if "data" not in data or "flow" not in data["data"]:
                 self.connected = False
