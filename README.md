@@ -24,6 +24,7 @@ The configuration happens in the configuration flow when you add the integration
 To access FusionSolar App you'll need an App account first. When you get it from your installer you'll have an Username and Password. That account is used on this integration.
 When you add the Integration it will be required, for configuration, said Username and Password. Please add there the ones you got for the App.
 It will also be required your Station which right now I can't get dynamically, but you can get it after you login on the URL, something like NE=123456789. Copy that and use it on your configuration.
+You need also to configure your Login Host (which changes from location to location) and also Data Host (which you can get from the URL after you login on Fusion Solar webapp). The default ones are from Europe.
 The default sensor's update frequency is 60 seconds, although the FusionSolar App only gets data every 5 minutes. It is just to make sure that as soon as the data can be retrieved from the API the sensors will be updated as soon as possible. After configuring the Integration you can go on the Config Entry and press configure where you'll have the opportunity to change de default update frequency (in seconds). Bare in mind that too frequent will not get data more frequent than 5 minutes and may push the API too much.
 
 
