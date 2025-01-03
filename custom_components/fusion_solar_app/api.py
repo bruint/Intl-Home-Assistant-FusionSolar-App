@@ -8,9 +8,9 @@ import time
 import requests
 import json
 from typing import Dict, Optional
-from urllib.parse import unquote
+from urllib.parse import unquote, urlparse
 from datetime import datetime, timedelta, timezone
-from .const import DOMAIN, PUBKEY_URL, LOGIN_HEADERS_1_STEP_REFERER, LOGIN_HEADERS_2_STEP_REFERER, LOGIN_VALIDATE_USER_URL, DATA_URL
+from .const import DOMAIN, PUBKEY_URL, LOGIN_HEADERS_1_STEP_REFERER, LOGIN_HEADERS_2_STEP_REFERER, LOGIN_VALIDATE_USER_URL, DATA_URL, STATION_LIST_URL, KEEP_ALIVE_URL, DATA_REFERER_URL, FUSION_SOLAR_HOST
 from .utils import extract_numeric, encrypt_password, generate_nonce
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,18 +49,20 @@ class Device:
 class FusionSolarAPI:
     """Class for Fusion Solar App API."""
 
-    def __init__(self, user: str, pwd: str, login_host: str, data_host: str, station: str) -> None:
+    def __init__(self, user: str, pwd: str) -> None:
         """Initialise."""
         self.user = user
         self.pwd = pwd
-        self.station = station
-        self.login_host = login_host
-        self.data_host = data_host
+        self.station = None
+        self.login_host = FUSION_SOLAR_HOST
+        self.data_host = None
         self.dp_session = ""
         self.connected: bool = False
         self.last_session_time: datetime | None = None
         self._session_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
+        self.csrf = None
+        self.csrf_time = None
 
     @property
     def controller_name(self) -> str:
@@ -70,7 +72,10 @@ class FusionSolarAPI:
     def login(self) -> bool:
         """Connect to api."""
         
-        response = requests.get(f"https://{self.login_host}{PUBKEY_URL}")
+        public_key_url = f"https://{self.login_host}{PUBKEY_URL}"
+        _LOGGER.debug("Getting Public Key at: %s", public_key_url)
+        
+        response = requests.get(public_key_url)
         pubkey_data = response.json()
         
         pub_key_pem = pubkey_data['pubKey']
@@ -99,6 +104,7 @@ class FusionSolarAPI:
             "x-requested-with": "XMLHttpRequest"
         }
         
+        _LOGGER.debug("Login Request to: %s", login_url)
         response = requests.post(login_url, json=payload, headers=headers)
         if response.status_code == 200:
             login_response = response.json()
@@ -119,8 +125,16 @@ class FusionSolarAPI:
                     "referer": f"https://{self.login_host}{LOGIN_HEADERS_2_STEP_REFERER}"
                 }
         
+                _LOGGER.debug("Redirect to: %s", redirect_url)
                 redirect_response = requests.get(redirect_url, headers=redirect_headers, allow_redirects=False)
                 _LOGGER.debug("Redirect Response: %s", redirect_response.text)
+                response_headers = redirect_response.headers
+                location_header = response_headers.get("Location")
+                _LOGGER.debug("Redirect Response headers:")
+                for header, value in response_headers.items():
+                    _LOGGER.debug(f"{header}: {value}")
+                
+                self.data_host = urlparse(location_header).netloc
 
                 if redirect_response.status_code == 200 or redirect_response.status_code == 302:
                     cookies = redirect_response.headers.get('Set-Cookie')
@@ -136,6 +150,8 @@ class FusionSolarAPI:
                             self.dp_session = dp_session
                             self.connected = True
                             self.last_session_time = datetime.now(timezone.utc)
+                            self.refresh_csrf()
+                            self.station = self.get_station_id()
                             self._start_session_monitor()
                             return True
                         else:
@@ -160,6 +176,65 @@ class FusionSolarAPI:
             _LOGGER.debug("%s", response.text)
             self.connected = False
             raise APIAuthError("Login failed.")
+
+    def refresh_csrf(self):
+        if self.csrf is None or datetime.now() - self.csrf_time > timedelta(minutes=5):
+            roarand_url = f"https://{self.data_host}{KEEP_ALIVE_URL}"
+            roarand_headers = {
+                "accept": "application/json, text/plain, */*",
+                "accept-encoding": "gzip, deflate, br, zstd",
+                "Referer": f"https://{self.data_host}{DATA_REFERER_URL}"
+            }
+            roarand_cookies = {
+                "locale": "en-us",
+                "dp-session": self.dp_session,
+            }
+            roarand_params = {}
+            
+            _LOGGER.debug("Getting Roarand at: %s", roarand_url)
+            roarand_response = requests.get(roarand_url, headers=roarand_headers, cookies=roarand_cookies, params=roarand_params)
+            self.csrf = roarand_response.json()["payload"]
+            self.csrf_time = datetime.now()
+            _LOGGER.debug(f"CSRF refreshed: {self.csrf}")
+    
+    def get_station_id(self):
+        return self.get_station_list()["data"]["list"][0]["dn"]
+
+    def get_station_list(self):
+        self.refresh_csrf()
+
+        station_url = f"https://{self.data_host}{STATION_LIST_URL}"
+        
+        station_headers = {
+                "accept": "application/json, text/javascript, /; q=0.01",
+                "accept-encoding": "gzip, deflate, br, zstd",
+                "Content-Type": "application/json",
+                "Origin": f"https://{self.data_host}",
+                "Referer": f"https://{self.data_host}{DATA_REFERER_URL}",
+                "Roarand": f"{self.csrf}",
+            }
+        
+        station_cookies = {
+                "locale": "en-us",
+                "dp-session": self.dp_session,
+            }
+        
+        station_payload = {
+                "curPage": 1,
+                "pageSize": 10,
+                "gridConnectedTime": "",
+                "queryTime": 1666044000000,
+                "timeZone": 2,
+                "sortId": "createTime",
+                "sortDir": "DESC",
+                "locale": "en_US",
+            }
+        
+        _LOGGER.debug("Getting Station at: %s", station_url)
+        station_response = requests.post(station_url, json=station_payload, headers=station_headers, cookies=station_cookies)
+        json_response = station_response.json()
+        _LOGGER.debug("Station info: %s", json_response["data"])
+        return json_response
 
     def logout(self) -> bool:
         """Disconnect from api."""
@@ -195,6 +270,8 @@ class FusionSolarAPI:
             self._session_thread.join()
 
     def get_devices(self) -> list[Device]:
+        self.refresh_csrf()
+
         cookies = {
             "locale": "en-us",
             "dp-session": self.dp_session,
@@ -210,7 +287,9 @@ class FusionSolarAPI:
         # Fusion Solar App Station parameter
         params = {"stationDn": unquote(self.station)}
         
-        response = requests.get(f"https://{self.data_host}{DATA_URL}", headers=headers, cookies=cookies, params=params)
+        data_access_url = f"https://{self.data_host}{DATA_URL}"
+        _LOGGER.debug("Getting Data at: %s", data_access_url)
+        response = requests.get(data_access_url, headers=headers, cookies=cookies, params=params)
 
         output = {
             "panel_production_power": None,
@@ -229,10 +308,12 @@ class FusionSolarAPI:
                 _LOGGER.debug("Get Data Response: %s", data)
             except Exception as ex:
                 self.connected = False
+                _LOGGER.debug("Error processing response: JSON format invalid!\r\nCookies: %s\r\nHeader: %s\r\n%s", cookies, headers, response.text)
                 raise APIAuthError("Error processing response: JSON format invalid!\r\nCookies: %s\r\nHeader: %s\r\n%s", cookies, headers, response.text)
 
             if "data" not in data or "flow" not in data["data"]:
                 self.connected = False
+                _LOGGER.debug("Error on data structure!")
                 raise APIDataStructureError("Error on data structure!")
 
             # Process nodes to gather required information
@@ -279,6 +360,7 @@ class FusionSolarAPI:
             output["exit_code"] = "SUCCESS"
             _LOGGER.debug("JSON: %s", json.dumps(output, indent=4))
         else:
+            _LOGGER.debug("Error on data structure! %s", response.text)
             self.connected = False
             raise APIDataStructureError("Error on data structure! %s", response.text)
 

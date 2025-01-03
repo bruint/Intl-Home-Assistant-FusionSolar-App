@@ -14,19 +14,13 @@
       "user": {
         "data": {
           "username": "Username",
-          "password": "Password",
-          "login_host": "Login Host",
-          "data_host": "Data Host",
-          "station": "Station"
+          "password": "Password"
         }
       },
       "reconfigure": {
         "data": {
           "username": "Username",
-          "password": "Password",
-          "login_host": "Login Host",
-          "data_host": "Data Host",
-          "station": "Station"
+          "password": "Password"
         }
       }
     }

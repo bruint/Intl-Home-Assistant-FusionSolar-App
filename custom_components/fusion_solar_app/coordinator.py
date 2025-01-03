@@ -14,7 +14,7 @@ from homeassistant.core import DOMAIN, HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import FusionSolarAPI, APIAuthError, Device, DeviceType
-from .const import DEFAULT_SCAN_INTERVAL, STATION_KEY, LOGIN_HOST, DATA_HOST
+from .const import DEFAULT_SCAN_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,9 +39,6 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
         # Set variables from values entered in config flow setup
         self.user = config_entry.data[CONF_USERNAME]
         self.pwd = config_entry.data[CONF_PASSWORD]
-        self.login_host = config_entry.data[LOGIN_HOST]
-        self.data_host = config_entry.data[DATA_HOST]
-        self.station = config_entry.data[STATION_KEY]
 
         # set variables from options.  You need a default here incase options have not been set
         self.poll_interval = config_entry.options.get(
@@ -63,7 +60,7 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
         )
 
         # Initialise your api here
-        self.api = FusionSolarAPI(user=self.user, pwd=self.pwd, login_host=self.login_host, data_host=self.data_host, station=self.station)
+        self.api = FusionSolarAPI(user=self.user, pwd=self.pwd)
 
     async def async_update_data(self):
         """Fetch data from API endpoint.
