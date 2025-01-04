@@ -107,8 +107,13 @@ class FusionSolarAPI:
         _LOGGER.debug("Login Request to: %s", login_url)
         response = requests.post(login_url, json=payload, headers=headers)
         if response.status_code == 200:
-            login_response = response.json()
-            _LOGGER.debug("Login Response: %s", login_response)
+            try:
+                login_response = response.json()
+                _LOGGER.debug("Login Response: %s", login_response)
+            except Exception as ex:
+                self.connected = False
+                _LOGGER.debug("Error processing Login response: JSON format invalid!\r\nHeader: %s\r\n%s", headers, response.text)
+                raise APIAuthError("Error processing response: JSON format invalid!\r\nHeader: %s\r\n%s", headers, response.text)
         
             if 'respMultiRegionName' in login_response and login_response['respMultiRegionName']:
                 redirect_info = login_response['respMultiRegionName'][1]  # Extract redirect URL
