@@ -14,13 +14,15 @@
       "user": {
         "data": {
           "username": "Username",
-          "password": "Password"
+          "password": "Password",
+          "fusion_solar_host": "Fusion Solar Login Host"
         }
       },
       "reconfigure": {
         "data": {
           "username": "Username",
-          "password": "Password"
+          "password": "Password",
+          "fusion_solar_host": "Fusion Solar Login Host"
         }
       }
     }

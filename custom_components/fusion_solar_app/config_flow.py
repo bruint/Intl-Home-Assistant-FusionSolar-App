@@ -22,7 +22,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 
 from .api import FusionSolarAPI, APIAuthError, APIConnectionError
-from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, MIN_SCAN_INTERVAL
+from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, MIN_SCAN_INTERVAL, FUSION_SOLAR_HOST
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,7 +31,8 @@ _LOGGER = logging.getLogger(__name__)
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_USERNAME, description={"suggested_value": ""}): str,
-        vol.Required(CONF_PASSWORD, description={"suggested_value": ""}): str
+        vol.Required(CONF_PASSWORD, description={"suggested_value": ""}): str,
+        vol.Required(FUSION_SOLAR_HOST, description={"suggested_value": "eu5.fusionsolar.huawei.com"}): str
     }
 )
 
@@ -41,7 +42,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
 
     Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
     """
-    api = FusionSolarAPI(data[CONF_USERNAME], data[CONF_PASSWORD])
+    api = FusionSolarAPI(data[CONF_USERNAME], data[CONF_PASSWORD], data[FUSION_SOLAR_HOST])
     try:
         await hass.async_add_executor_job(api.login)
         # If you cannot connect, raise CannotConnect
@@ -136,7 +137,8 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Required(CONF_USERNAME, default=config_entry.data[CONF_USERNAME]): str,
-                    vol.Required(CONF_PASSWORD): str
+                    vol.Required(CONF_PASSWORD): str,
+                    vol.Required(FUSION_SOLAR_HOST, default=config_entry.data[FUSION_SOLAR_HOST]): str,
                 }
             ),
             errors=errors,

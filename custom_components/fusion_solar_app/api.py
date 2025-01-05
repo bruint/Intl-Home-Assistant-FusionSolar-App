@@ -10,7 +10,7 @@ import json
 from typing import Dict, Optional
 from urllib.parse import unquote, urlparse
 from datetime import datetime, timedelta, timezone
-from .const import DOMAIN, PUBKEY_URL, LOGIN_HEADERS_1_STEP_REFERER, LOGIN_HEADERS_2_STEP_REFERER, LOGIN_VALIDATE_USER_URL, DATA_URL, STATION_LIST_URL, KEEP_ALIVE_URL, DATA_REFERER_URL, FUSION_SOLAR_HOST
+from .const import DOMAIN, PUBKEY_URL, LOGIN_HEADERS_1_STEP_REFERER, LOGIN_HEADERS_2_STEP_REFERER, LOGIN_VALIDATE_USER_URL, DATA_URL, STATION_LIST_URL, KEEP_ALIVE_URL, DATA_REFERER_URL
 from .utils import extract_numeric, encrypt_password, generate_nonce
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,12 +49,12 @@ class Device:
 class FusionSolarAPI:
     """Class for Fusion Solar App API."""
 
-    def __init__(self, user: str, pwd: str) -> None:
+    def __init__(self, user: str, pwd: str, login_host: str) -> None:
         """Initialise."""
         self.user = user
         self.pwd = pwd
         self.station = None
-        self.login_host = FUSION_SOLAR_HOST
+        self.login_host = login_host
         self.data_host = None
         self.dp_session = ""
         self.connected: bool = False
