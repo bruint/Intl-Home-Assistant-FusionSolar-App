@@ -30,12 +30,21 @@ The default sensor's update frequency is 60 seconds, although the FusionSolar Ap
 
 After setting up the Integration you will get a Device which will have the following sensors:
 * Panels Production (kW)
+* Panels Production Today (kWh)
+* Panels Production Month (kWh)
+* Panels Production Year (kWh)
+* Panels Production Lifetime (kWh)
+* Panels Production Consumption Today (kWh)
 * House Load (kW)
+* House Load Today (kWh)
 * Battery Consumption (kW)
 * Battery Injections (kW)
 * Grid Consumption (kW)
+* Grid Consumption Today (kWh)
 * Grid Injection (kW)
+* Grid Injection Today (kWh)
 * Battery Percentage (%)
+* Battery Capacity
 * Last Authentication Time
 
 ## Card configuration

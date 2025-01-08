@@ -8,9 +8,9 @@ import time
 import requests
 import json
 from typing import Dict, Optional
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, quote, urlparse, urlencode
 from datetime import datetime, timedelta, timezone
-from .const import DOMAIN, PUBKEY_URL, LOGIN_HEADERS_1_STEP_REFERER, LOGIN_HEADERS_2_STEP_REFERER, LOGIN_VALIDATE_USER_URL, DATA_URL, STATION_LIST_URL, KEEP_ALIVE_URL, DATA_REFERER_URL
+from .const import DOMAIN, PUBKEY_URL, LOGIN_HEADERS_1_STEP_REFERER, LOGIN_HEADERS_2_STEP_REFERER, LOGIN_VALIDATE_USER_URL, DATA_URL, STATION_LIST_URL, KEEP_ALIVE_URL, DATA_REFERER_URL, ENERGY_BALANCE_URL
 from .utils import extract_numeric, encrypt_password, generate_nonce
 
 _LOGGER = logging.getLogger(__name__)
@@ -19,19 +19,35 @@ _LOGGER = logging.getLogger(__name__)
 class DeviceType(StrEnum):
     """Device types."""
 
-    SENSOR = "sensor"
+    SENSOR_KW = "sensor"
+    SENSOR_KWH = "sensor_kwh"
     SENSOR_PERCENTAGE = "sensor_percentage"
     SENSOR_TIME = "sensor_time"
 
+class ENERGY_BALANCE_CALL_TYPE(StrEnum):
+    """Device types."""
+
+    MONTH = "4"
+    YEAR = "5"
+
 DEVICES = [
-    {"id": "House Load Power", "type": DeviceType.SENSOR, "icon": "mdi:home-lightning-bolt-outline"},
-    {"id": "Panel Production Power", "type": DeviceType.SENSOR, "icon": "mdi:solar-panel"},
-    {"id": "Battery Consumption Power", "type": DeviceType.SENSOR, "icon": "mdi:battery-charging-100"},
-    {"id": "Battery Injection Power", "type": DeviceType.SENSOR, "icon": "mdi:battery-charging"},
-    {"id": "Grid Consumption Power", "type": DeviceType.SENSOR, "icon": "mdi:transmission-tower-export"},
-    {"id": "Grid Injection Power", "type": DeviceType.SENSOR, "icon": "mdi:transmission-tower-import"},
+    {"id": "House Load Power", "type": DeviceType.SENSOR_KW, "icon": "mdi:home-lightning-bolt-outline"},
+    {"id": "House Load Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:home-lightning-bolt-outline"},
+    {"id": "Panel Production Power", "type": DeviceType.SENSOR_KW, "icon": "mdi:solar-panel"},
+    {"id": "Panel Production Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
+    {"id": "Panel Production Lifetime", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
+    {"id": "Panel Production Month", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
+    {"id": "Panel Production Year", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
+    {"id": "Panel Production Consumption Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
+    {"id": "Battery Consumption Power", "type": DeviceType.SENSOR_KW, "icon": "mdi:battery-charging-100"},
+    {"id": "Battery Injection Power", "type": DeviceType.SENSOR_KW, "icon": "mdi:battery-charging"},
+    {"id": "Grid Consumption Power", "type": DeviceType.SENSOR_KW, "icon": "mdi:transmission-tower-export"},
+    {"id": "Grid Consumption Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-export"},
+    {"id": "Grid Injection Power", "type": DeviceType.SENSOR_KW, "icon": "mdi:transmission-tower-import"},
+    {"id": "Grid Injection Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-import"},
     {"id": "Battery Percentage", "type": DeviceType.SENSOR_PERCENTAGE, "icon": ""},
-    {"id": "Last Authentication Time", "type": DeviceType.SENSOR_TIME, "icon": "mdi:clock-outline"}
+    {"id": "Last Authentication Time", "type": DeviceType.SENSOR_TIME, "icon": "mdi:clock-outline"},
+    {"id": "Battery Capacity", "type": DeviceType.SENSOR_KW, "icon": "mdi:home-lightning-bolt-outline"},
 ]
 
 @dataclass
@@ -76,7 +92,15 @@ class FusionSolarAPI:
         _LOGGER.debug("Getting Public Key at: %s", public_key_url)
         
         response = requests.get(public_key_url)
-        pubkey_data = response.json()
+        _LOGGER.debug("Pubkey Response Headers: %s\r\nResponse: %s", response.headers, response.text)
+        try:
+            pubkey_data = response.json()
+            _LOGGER.debug("Pubkey Response: %s", pubkey_data)
+        except Exception as ex:
+            self.connected = False
+            _LOGGER.debug("Error processing Pubkey response: JSON format invalid!\r\nResponse Headers: %s\r\nResponse: %s", response.headers, response.text)
+            raise APIAuthError("Error processing Pubkey response: JSON format invalid!\r\nResponse Headers: %s\r\nResponse: %s", response.headers, response.text)
+        
         
         pub_key_pem = pubkey_data['pubKey']
         time_stamp = pubkey_data['timeStamp']
@@ -106,21 +130,21 @@ class FusionSolarAPI:
         
         _LOGGER.debug("Login Request to: %s", login_url)
         response = requests.post(login_url, json=payload, headers=headers)
+        _LOGGER.debug("Login: Request Headers: %s\r\nResponse Headers: %s\r\nResponse: %s", headers, response.headers, response.text)
         if response.status_code == 200:
             try:
                 login_response = response.json()
                 _LOGGER.debug("Login Response: %s", login_response)
             except Exception as ex:
                 self.connected = False
-                _LOGGER.debug("Error processing Login response: JSON format invalid!\r\nHeader: %s\r\n%s", headers, response.text)
-                raise APIAuthError("Error processing response: JSON format invalid!\r\nHeader: %s\r\n%s", headers, response.text)
+                _LOGGER.debug("Error processing Login response: JSON format invalid!\r\nRequest Headers: %s\r\nResponse Headers: %s\r\nResponse: %s", headers, response.headers, response.text)
+                raise APIAuthError("Error processing Login response: JSON format invalid!\r\nRequest Headers: %s\r\nResponse Headers: %s\r\nResponse: %s", headers, response.headers, response.text)
         
             if 'respMultiRegionName' in login_response and login_response['respMultiRegionName']:
                 redirect_info = login_response['respMultiRegionName'][1]  # Extract redirect URL
                 region_name = login_response['respMultiRegionName'][0]
         
                 redirect_url = f"https://{self.login_host}{redirect_info}"
-                _LOGGER.debug("Login Response: %s", redirect_url)
 
                 redirect_headers = {
                     "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
@@ -135,10 +159,8 @@ class FusionSolarAPI:
                 _LOGGER.debug("Redirect Response: %s", redirect_response.text)
                 response_headers = redirect_response.headers
                 location_header = response_headers.get("Location")
-                _LOGGER.debug("Redirect Response headers:")
-                for header, value in response_headers.items():
-                    _LOGGER.debug(f"{header}: {value}")
-                
+                _LOGGER.debug("Redirect Response headers: %s", response_headers)
+
                 self.data_host = urlparse(location_header).netloc
 
                 if redirect_response.status_code == 200 or redirect_response.status_code == 302:
@@ -178,7 +200,8 @@ class FusionSolarAPI:
                 raise APIAuthError("Login response did not include redirect information.")
         else:
             _LOGGER.debug("Login failed: %s", response.status_code)
-            _LOGGER.debug("%s", response.text)
+            _LOGGER.debug("Response headers: %s", response.headers)
+            _LOGGER.debug("Response: %s", response.text)
             self.connected = False
             raise APIAuthError("Login failed.")
 
@@ -202,6 +225,39 @@ class FusionSolarAPI:
             self.csrf_time = datetime.now()
             _LOGGER.debug(f"CSRF refreshed: {self.csrf}")
     
+    def logout(self) -> bool:
+        """Disconnect from api."""
+        self.connected = False
+        self._stop_session_monitor()
+        return True
+
+    def _renew_session(self) -> None:
+        """Simulate session renewal."""
+        _LOGGER.info("Renewing session.")
+        self.connected = False
+        self.dp_session = ""
+        self.login()
+
+    def _session_monitor(self) -> None:
+        """Monitor session and renew if needed."""
+        while not self._stop_event.is_set():
+            if self.connected == False:
+                self._renew_session()
+            time.sleep(60)  # Check every 60 seconds
+
+    def _start_session_monitor(self) -> None:
+        """Start the session monitor thread."""
+        if self._session_thread is None or not self._session_thread.is_alive():
+            self._stop_event.clear()
+            self._session_thread = threading.Thread(target=self._session_monitor, daemon=True)
+            self._session_thread.start()
+
+    def _stop_session_monitor(self) -> None:
+        """Stop the session monitor thread."""
+        self._stop_event.set()
+        if self._session_thread is not None:
+            self._session_thread.join()
+
     def get_station_id(self):
         return self.get_station_list()["data"]["list"][0]["dn"]
 
@@ -241,39 +297,6 @@ class FusionSolarAPI:
         _LOGGER.debug("Station info: %s", json_response["data"])
         return json_response
 
-    def logout(self) -> bool:
-        """Disconnect from api."""
-        self.connected = False
-        self._stop_session_monitor()
-        return True
-
-    def _renew_session(self) -> None:
-        """Simulate session renewal."""
-        _LOGGER.info("Renewing session.")
-        self.connected = False
-        self.dp_session = ""
-        self.login()
-
-    def _session_monitor(self) -> None:
-        """Monitor session and renew if needed."""
-        while not self._stop_event.is_set():
-            if self.connected == False:
-                self._renew_session()
-            time.sleep(60)  # Check every 60 seconds
-
-    def _start_session_monitor(self) -> None:
-        """Start the session monitor thread."""
-        if self._session_thread is None or not self._session_thread.is_alive():
-            self._stop_event.clear()
-            self._session_thread = threading.Thread(target=self._session_monitor, daemon=True)
-            self._session_thread.start()
-
-    def _stop_session_monitor(self) -> None:
-        """Stop the session monitor thread."""
-        self._stop_event.set()
-        if self._session_thread is not None:
-            self._session_thread.join()
-
     def get_devices(self) -> list[Device]:
         self.refresh_csrf()
 
@@ -298,12 +321,21 @@ class FusionSolarAPI:
 
         output = {
             "panel_production_power": None,
+            "panel_production_consumption_today": None,
+            "panel_production_lifetime": None,
             "house_load_power": None,
+            "house_load_today": None,
             "grid_consumption_power": None,
+            "grid_consumption_today": None,
             "grid_injection_power": None,
+            "grid_injection_today": None,
             "battery_injection_power": None,
             "battery_consumption_power": None,
             "battery_percentage": None,
+            "panel_production_today": None,
+            "panel_production_month": None,
+            "panel_production_year": None,
+            "battery_capacity": None,
             "exit_code": "SUCCESS",
         }
         
@@ -312,12 +344,10 @@ class FusionSolarAPI:
                 data = response.json()
                 _LOGGER.debug("Get Data Response: %s", data)
             except Exception as ex:
-                self.connected = False
                 _LOGGER.debug("Error processing response: JSON format invalid!\r\nCookies: %s\r\nHeader: %s\r\n%s", cookies, headers, response.text)
                 raise APIAuthError("Error processing response: JSON format invalid!\r\nCookies: %s\r\nHeader: %s\r\n%s", cookies, headers, response.text)
 
             if "data" not in data or "flow" not in data["data"]:
-                self.connected = False
                 _LOGGER.debug("Error on data structure!")
                 raise APIDataStructureError("Error on data structure!")
 
@@ -362,11 +392,13 @@ class FusionSolarAPI:
                         output[node_map[label]] = 0.0
                         output["grid_injection_power"] = extract_numeric(value)
             
+            self.update_output_with_station_data(output)
+            self.update_output_with_energy_balance(output)
+
             output["exit_code"] = "SUCCESS"
             _LOGGER.debug("JSON: %s", json.dumps(output, indent=4))
         else:
             _LOGGER.debug("Error on data structure! %s", response.text)
-            self.connected = False
             raise APIDataStructureError("Error on data structure! %s", response.text)
 
         """Get devices on api."""
@@ -383,6 +415,71 @@ class FusionSolarAPI:
             )
             for device in DEVICES
         ]
+
+    def update_output_with_station_data(self, output: Dict[str, Optional[float | str]]):
+        station_list = self.get_station_list()
+        station_data = station_list["data"]["list"][0]
+        
+        output["panel_production_consumption_today"] = station_data["dailySelfUseEnergy"]
+        output["panel_production_lifetime"] = station_data["cumulativeEnergy"]
+        output["panel_production_today"] = station_data["dailyEnergy"]
+        output["panel_production_month"] = station_data["monthEnergy"]
+        output["panel_production_year"] = station_data["yearEnergy"]
+        output["grid_consumption_today"] = station_data["dailyBuyEnergy"]
+        output["grid_injection_today"] = station_data["dailyOnGridEnergy"]
+        output["house_load_today"] = station_data["dailyUseEnergy"]
+        output["battery_capacity"] = station_data["batteryCapacity"]
+    
+    def update_output_with_energy_balance(self, output: Dict[str, Optional[float | str]]):
+        self.call_energy_balance(ENERGY_BALANCE_CALL_TYPE.MONTH)
+        self.call_energy_balance(ENERGY_BALANCE_CALL_TYPE.YEAR)
+
+
+    def call_energy_balance(self, call_type: ENERGY_BALANCE_CALL_TYPE):
+        currentTime = datetime.now()
+        timestampNow = currentTime.timestamp() * 1000
+        current_month = currentTime.month
+        current_year = currentTime.year
+        first_day_of_month = datetime(current_year, current_month, 1)
+        first_day_of_year = datetime(current_year, 1, 1)
+
+        if call_type == ENERGY_BALANCE_CALL_TYPE.MONTH:
+            timestamp = first_day_of_month.timestamp() * 1000
+            dateStr = first_day_of_month.strftime("%Y-%m-%d %H:%M:%S")
+        elif call_type == ENERGY_BALANCE_CALL_TYPE.YEAR:
+            timestamp = first_day_of_year.timestamp() * 1000
+            dateStr = first_day_of_year.strftime("%Y-%m-%d %H:%M:%S")
+        
+        cookies = {
+            "locale": "en-us",
+            "dp-session": self.dp_session,
+        }
+        
+        headers = {
+            "application/json": "text/plain, */*",
+            "Accept-Encoding": "gzip, deflate, br, zstd",
+            "Accept-Language": "en-GB,en;q=0.9",
+        }
+
+        params = {
+             "stationDn": unquote(self.station),
+             "timeDim": call_type,
+             "queryTime": int(timestamp),
+             "timeZone": "0.0",
+             "timeZoneStr": "Europe%2FLondon",
+             "dateStr": quote(dateStr),
+             "_": int(timestampNow)
+        }
+         
+        energy_balance_url = f"https://{self.data_host}{ENERGY_BALANCE_URL}?{urlencode(params)}"
+        _LOGGER.debug("Getting Energy Balance at: %s", energy_balance_url)
+        #energy_balance_response = requests.get(energy_balance_url, headers=headers, cookies=cookies)
+        #_LOGGER.debug("Energy Balance Response: %s", energy_balance_response.text)
+        #try:
+            #energy_balance_data = energy_balance_response.json()
+            #_LOGGER.debug("Energy Balance JSON: %s", energy_balance_data)
+        #except Exception as ex:
+            #_LOGGER.error("Error processing Energy Balance response: JSON format invalid!")
 
     def get_device_unique_id(self, device_id: str, device_type: DeviceType) -> str:
         """Return a unique device id."""
@@ -406,9 +503,9 @@ class FusionSolarAPI:
             return default  # Retorna o valor padrão se for None
 
         try:
-            if device_type == DeviceType.SENSOR:
+            if device_type == DeviceType.SENSOR_KW or device_type == DeviceType.SENSOR_KWH:
                _LOGGER.debug("%s: Value being returned is float: %f", device_id, value)
-               return float(value)
+               return round(float(value), 4)
             else:
                 _LOGGER.debug("%s: Value being returned is int: %i", device_id, value)
                 return int(value)

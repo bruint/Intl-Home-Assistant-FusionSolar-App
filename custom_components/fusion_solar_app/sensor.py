@@ -8,7 +8,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfPower
+from homeassistant.const import UnitOfPower, UnitOfEnergy
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -38,7 +38,7 @@ async def async_setup_entry(
     sensors = [
         FusionSolarSensor(coordinator, device)
         for device in coordinator.data.devices
-        if device.device_type in {DeviceType.SENSOR, DeviceType.SENSOR_PERCENTAGE, DeviceType.SENSOR_TIME}
+        if device.device_type in {DeviceType.SENSOR_KW, DeviceType.SENSOR_KWH, DeviceType.SENSOR_PERCENTAGE, DeviceType.SENSOR_TIME}
     ]
 
     # Create the sensors.
@@ -68,8 +68,10 @@ class FusionSolarSensor(CoordinatorEntity, SensorEntity):
     def device_class(self) -> str:
         """Return device class."""
         # https://developers.home-assistant.io/docs/core/entity/sensor/#available-device-classes
-        if self.device.device_type == DeviceType.SENSOR:
+        if self.device.device_type == DeviceType.SENSOR_KW:
             return SensorDeviceClass.POWER
+        elif self.device.device_type == DeviceType.SENSOR_KWH:
+            return SensorDeviceClass.ENERGY
         elif self.device.device_type == DeviceType.SENSOR_TIME:
             return SensorDeviceClass.TIMESTAMP
         else:
@@ -114,8 +116,10 @@ class FusionSolarSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_unit_of_measurement(self) -> str | None:
         """Return unit of power."""
-        if self.device.device_type == DeviceType.SENSOR:
+        if self.device.device_type == DeviceType.SENSOR_KW:
             return UnitOfPower.KILO_WATT
+        elif self.device.device_type == DeviceType.SENSOR_KWH:
+            return UnitOfEnergy.KILO_WATT_HOUR
         elif self.device.device_type == DeviceType.SENSOR_TIME:
             return ""
         else:
