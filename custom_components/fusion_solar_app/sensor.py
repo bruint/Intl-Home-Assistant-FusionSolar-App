@@ -131,8 +131,10 @@ class FusionSolarSensor(CoordinatorEntity, SensorEntity):
         # https://developers.home-assistant.io/docs/core/entity/sensor/#available-state-classes
         if self.device.device_type == DeviceType.SENSOR_TIME:
             return ""
+        elif self.device.device_type == DeviceType.SENSOR_KWH:
+            return SensorStateClass.TOTAL
         else:
-           return SensorStateClass.MEASUREMENT
+            return SensorStateClass.MEASUREMENT
 
     @property
     def unique_id(self) -> str:

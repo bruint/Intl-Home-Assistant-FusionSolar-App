@@ -27,27 +27,49 @@ class DeviceType(StrEnum):
 class ENERGY_BALANCE_CALL_TYPE(StrEnum):
     """Device types."""
 
+    DAY = "2"
     MONTH = "4"
     YEAR = "5"
+    LIFETIME = "6"
 
 DEVICES = [
     {"id": "House Load Power", "type": DeviceType.SENSOR_KW, "icon": "mdi:home-lightning-bolt-outline"},
     {"id": "House Load Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:home-lightning-bolt-outline"},
+    {"id": "House Load Month", "type": DeviceType.SENSOR_KWH, "icon": "mdi:home-lightning-bolt-outline"},
+    {"id": "House Load Year", "type": DeviceType.SENSOR_KWH, "icon": "mdi:home-lightning-bolt-outline"},
+    {"id": "House Load Lifetime", "type": DeviceType.SENSOR_KWH, "icon": "mdi:home-lightning-bolt-outline"},
     {"id": "Panel Production Power", "type": DeviceType.SENSOR_KW, "icon": "mdi:solar-panel"},
     {"id": "Panel Production Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
-    {"id": "Panel Production Lifetime", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
     {"id": "Panel Production Month", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
     {"id": "Panel Production Year", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
+    {"id": "Panel Production Lifetime", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
     {"id": "Panel Production Consumption Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
+    {"id": "Panel Production Consumption Month", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
+    {"id": "Panel Production Consumption Year", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
+    {"id": "Panel Production Consumption Lifetime", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
     {"id": "Battery Consumption Power", "type": DeviceType.SENSOR_KW, "icon": "mdi:battery-charging-100"},
+    {"id": "Battery Consumption Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging-100"},
+    {"id": "Battery Consumption Month", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging-100"},
+    {"id": "Battery Consumption Year", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging-100"},
+    {"id": "Battery Consumption Lifetime", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging-100"},
     {"id": "Battery Injection Power", "type": DeviceType.SENSOR_KW, "icon": "mdi:battery-charging"},
+    {"id": "Battery Injection Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging"},
+    {"id": "Battery Injection Month", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging"},
+    {"id": "Battery Injection Year", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging"},
+    {"id": "Battery Injection Lifetime", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging"},
     {"id": "Grid Consumption Power", "type": DeviceType.SENSOR_KW, "icon": "mdi:transmission-tower-export"},
     {"id": "Grid Consumption Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-export"},
+    {"id": "Grid Consumption Month", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-export"},
+    {"id": "Grid Consumption Year", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-export"},
+    {"id": "Grid Consumption Lifetime", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-export"},
     {"id": "Grid Injection Power", "type": DeviceType.SENSOR_KW, "icon": "mdi:transmission-tower-import"},
     {"id": "Grid Injection Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-import"},
+    {"id": "Grid Injection Month", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-import"},
+    {"id": "Grid Injection Year", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-import"},
+    {"id": "Grid Injection Lifetime", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-import"},
     {"id": "Battery Percentage", "type": DeviceType.SENSOR_PERCENTAGE, "icon": ""},
-    {"id": "Last Authentication Time", "type": DeviceType.SENSOR_TIME, "icon": "mdi:clock-outline"},
     {"id": "Battery Capacity", "type": DeviceType.SENSOR_KW, "icon": "mdi:home-lightning-bolt-outline"},
+    {"id": "Last Authentication Time", "type": DeviceType.SENSOR_TIME, "icon": "mdi:clock-outline"},
 ]
 
 @dataclass
@@ -70,6 +92,7 @@ class FusionSolarAPI:
         self.user = user
         self.pwd = pwd
         self.station = None
+        self.battery_capacity = None
         self.login_host = login_host
         self.data_host = None
         self.dp_session = ""
@@ -98,7 +121,7 @@ class FusionSolarAPI:
             _LOGGER.debug("Pubkey Response: %s", pubkey_data)
         except Exception as ex:
             self.connected = False
-            _LOGGER.debug("Error processing Pubkey response: JSON format invalid!\r\nResponse Headers: %s\r\nResponse: %s", response.headers, response.text)
+            _LOGGER.error("Error processing Pubkey response: JSON format invalid!\r\nResponse Headers: %s\r\nResponse: %s", response.headers, response.text)
             raise APIAuthError("Error processing Pubkey response: JSON format invalid!\r\nResponse Headers: %s\r\nResponse: %s", response.headers, response.text)
         
         
@@ -137,7 +160,7 @@ class FusionSolarAPI:
                 _LOGGER.debug("Login Response: %s", login_response)
             except Exception as ex:
                 self.connected = False
-                _LOGGER.debug("Error processing Login response: JSON format invalid!\r\nRequest Headers: %s\r\nResponse Headers: %s\r\nResponse: %s", headers, response.headers, response.text)
+                _LOGGER.error("Error processing Login response: JSON format invalid!\r\nRequest Headers: %s\r\nResponse Headers: %s\r\nResponse: %s", headers, response.headers, response.text)
                 raise APIAuthError("Error processing Login response: JSON format invalid!\r\nRequest Headers: %s\r\nResponse Headers: %s\r\nResponse: %s", headers, response.headers, response.text)
         
             if 'respMultiRegionName' in login_response and login_response['respMultiRegionName']:
@@ -178,7 +201,10 @@ class FusionSolarAPI:
                             self.connected = True
                             self.last_session_time = datetime.now(timezone.utc)
                             self.refresh_csrf()
-                            self.station = self.get_station_id()
+                            station_data = self.get_station_list()
+                            self.station = station_data["data"]["list"][0]["dn"]
+                            if self.battery_capacity is None or self.battery_capacity == 0.0:
+                                self.battery_capacity = station_data["data"]["list"][0]["batteryCapacity"]
                             self._start_session_monitor()
                             return True
                         else:
@@ -225,39 +251,6 @@ class FusionSolarAPI:
             self.csrf_time = datetime.now()
             _LOGGER.debug(f"CSRF refreshed: {self.csrf}")
     
-    def logout(self) -> bool:
-        """Disconnect from api."""
-        self.connected = False
-        self._stop_session_monitor()
-        return True
-
-    def _renew_session(self) -> None:
-        """Simulate session renewal."""
-        _LOGGER.info("Renewing session.")
-        self.connected = False
-        self.dp_session = ""
-        self.login()
-
-    def _session_monitor(self) -> None:
-        """Monitor session and renew if needed."""
-        while not self._stop_event.is_set():
-            if self.connected == False:
-                self._renew_session()
-            time.sleep(60)  # Check every 60 seconds
-
-    def _start_session_monitor(self) -> None:
-        """Start the session monitor thread."""
-        if self._session_thread is None or not self._session_thread.is_alive():
-            self._stop_event.clear()
-            self._session_thread = threading.Thread(target=self._session_monitor, daemon=True)
-            self._session_thread.start()
-
-    def _stop_session_monitor(self) -> None:
-        """Stop the session monitor thread."""
-        self._stop_event.set()
-        if self._session_thread is not None:
-            self._session_thread.join()
-
     def get_station_id(self):
         return self.get_station_list()["data"]["list"][0]["dn"]
 
@@ -321,30 +314,50 @@ class FusionSolarAPI:
 
         output = {
             "panel_production_power": None,
-            "panel_production_consumption_today": None,
-            "panel_production_lifetime": None,
-            "house_load_power": None,
-            "house_load_today": None,
-            "grid_consumption_power": None,
-            "grid_consumption_today": None,
-            "grid_injection_power": None,
-            "grid_injection_today": None,
-            "battery_injection_power": None,
-            "battery_consumption_power": None,
-            "battery_percentage": None,
             "panel_production_today": None,
             "panel_production_month": None,
             "panel_production_year": None,
+            "panel_production_lifetime": None,
+            "panel_production_consumption_today": None,
+            "panel_production_consumption_month": None,
+            "panel_production_consumption_year": None,
+            "panel_production_consumption_lifetime": None,
+            "house_load_power": None,
+            "house_load_today": None,
+            "house_load_month": None,
+            "house_load_year": None,
+            "house_load_lifetime": None,
+            "grid_consumption_power": None,
+            "grid_consumption_today": None,
+            "grid_consumption_month": None,
+            "grid_consumption_year": None,
+            "grid_consumption_lifetime": None,
+            "grid_injection_power": None,
+            "grid_injection_today": None,
+            "grid_injection_month": None,
+            "grid_injection_year": None,
+            "grid_injection_lifetime": None,
+            "battery_injection_power": None,
+            "battery_injection_today": None,
+            "battery_injection_month": None,
+            "battery_injection_year": None,
+            "battery_injection_lifetime": None,
+            "battery_consumption_power": None,
+            "battery_consumption_today": None,
+            "battery_consumption_month": None,
+            "battery_consumption_year": None,
+            "battery_consumption_lifetime": None,
+            "battery_percentage": None,
             "battery_capacity": None,
             "exit_code": "SUCCESS",
         }
-        
+
         if response.status_code == 200:
             try:
                 data = response.json()
                 _LOGGER.debug("Get Data Response: %s", data)
             except Exception as ex:
-                _LOGGER.debug("Error processing response: JSON format invalid!\r\nCookies: %s\r\nHeader: %s\r\n%s", cookies, headers, response.text)
+                _LOGGER.error("Error processing response: JSON format invalid!\r\nCookies: %s\r\nHeader: %s\r\n%s", cookies, headers, response.text)
                 raise APIAuthError("Error processing response: JSON format invalid!\r\nCookies: %s\r\nHeader: %s\r\n%s", cookies, headers, response.text)
 
             if "data" not in data or "flow" not in data["data"]:
@@ -392,11 +405,11 @@ class FusionSolarAPI:
                         output[node_map[label]] = 0.0
                         output["grid_injection_power"] = extract_numeric(value)
             
-            self.update_output_with_station_data(output)
+            self.update_output_with_battery_capacity(output)
             self.update_output_with_energy_balance(output)
 
             output["exit_code"] = "SUCCESS"
-            _LOGGER.debug("JSON: %s", json.dumps(output, indent=4))
+            _LOGGER.debug("output JSON: %s", output)
         else:
             _LOGGER.debug("Error on data structure! %s", response.text)
             raise APIDataStructureError("Error on data structure! %s", response.text)
@@ -416,37 +429,139 @@ class FusionSolarAPI:
             for device in DEVICES
         ]
 
-    def update_output_with_station_data(self, output: Dict[str, Optional[float | str]]):
-        station_list = self.get_station_list()
-        station_data = station_list["data"]["list"][0]
-        
-        output["panel_production_consumption_today"] = station_data["dailySelfUseEnergy"]
-        output["panel_production_lifetime"] = station_data["cumulativeEnergy"]
-        output["panel_production_today"] = station_data["dailyEnergy"]
-        output["panel_production_month"] = station_data["monthEnergy"]
-        output["panel_production_year"] = station_data["yearEnergy"]
-        output["grid_consumption_today"] = station_data["dailyBuyEnergy"]
-        output["grid_injection_today"] = station_data["dailyOnGridEnergy"]
-        output["house_load_today"] = station_data["dailyUseEnergy"]
-        output["battery_capacity"] = station_data["batteryCapacity"]
+    def update_output_with_battery_capacity(self, output: Dict[str, Optional[float | str]]):
+        if self.battery_capacity is None or self.battery_capacity == 0.0:
+            self.refresh_csrf()
+            station_list = self.get_station_list()
+            station_data = station_list["data"]["list"][0]
+            output["battery_capacity"] = station_data["batteryCapacity"]
+            self.battery_capacity = station_data["batteryCapacity"]
+        else:
+            output["battery_capacity"] = self.battery_capacity
     
     def update_output_with_energy_balance(self, output: Dict[str, Optional[float | str]]):
-        self.call_energy_balance(ENERGY_BALANCE_CALL_TYPE.MONTH)
-        self.call_energy_balance(ENERGY_BALANCE_CALL_TYPE.YEAR)
+        self.refresh_csrf()
+        
+        # Day calculations
+        day_data = self.call_energy_balance(ENERGY_BALANCE_CALL_TYPE.DAY)
+        output["grid_consumption_today"] = day_data["data"]["totalBuyPower"]
+        output["grid_injection_today"] = day_data["data"]["totalOnGridPower"]
+        
+        # Month calculations
+        month_data = self.call_energy_balance(ENERGY_BALANCE_CALL_TYPE.MONTH)
+        output["panel_production_month"] = month_data["data"]["totalProductPower"]
+        output["panel_production_consumption_month"] = month_data["data"]["totalSelfUsePower"]
+        
+        month_charge_power_list = month_data["data"]["chargePower"]
+        month_total_charge_power = sum(float(value) for value in month_charge_power_list if value != "--")
+        output["battery_injection_month"] = month_total_charge_power
+        
+        month_discharge_power_list = month_data["data"]["dischargePower"]
+        month_total_discharge_power = sum(float(value) for value in month_discharge_power_list if value != "--")
+        output["battery_consumption_month"] = month_total_discharge_power
+        
+        charge_value_today = month_charge_power_list[datetime.now().day - 1]
+        if charge_value_today != "--":
+           charge_value_today = float(charge_value_today)
+        else:
+           charge_value_today = 0
+        output["battery_injection_today"] = charge_value_today
 
+        discharge_value_today = month_discharge_power_list[datetime.now().day - 1]
+        if discharge_value_today != "--":
+           discharge_value_today = float(discharge_value_today)
+        else:
+           discharge_value_today = 0
+        output["battery_consumption_today"] = discharge_value_today
+        
+        output["grid_injection_month"] = month_data["data"]["totalOnGridPower"]
+        output["grid_consumption_month"] = month_data["data"]["totalBuyPower"]
 
+        month_self_use_list = month_data["data"]["selfUsePower"]
+        self_use_value_today = month_self_use_list[datetime.now().day - 1]
+        if self_use_value_today != "--":
+           self_use_value_today = float(self_use_value_today)
+        else:
+           self_use_value_today = 0
+        output["panel_production_consumption_today"] = self_use_value_today
+        
+        month_house_load_list = month_data["data"]["usePower"]
+        house_load_value_today = month_house_load_list[datetime.now().day - 1]
+        if house_load_value_today != "--":
+           house_load_value_today = float(house_load_value_today)
+        else:
+           house_load_value_today = 0
+        output["house_load_today"] = house_load_value_today
+        
+        month_panel_production_list = month_data["data"]["productPower"]
+        panel_production_value_today = month_panel_production_list[datetime.now().day - 1]
+        if panel_production_value_today != "--":
+           panel_production_value_today = float(panel_production_value_today)
+        else:
+           panel_production_value_today = 0
+        output["panel_production_today"] = panel_production_value_today
+        
+        # Year calculations
+        year_data = self.call_energy_balance(ENERGY_BALANCE_CALL_TYPE.YEAR)
+        output["panel_production_consumption_year"] = year_data["data"]["totalSelfUsePower"]
+        output["house_load_year"] = year_data["data"]["totalUsePower"]
+        output["panel_production_year"] = year_data["data"]["totalProductPower"]
+        output["grid_consumption_year"] = year_data["data"]["totalBuyPower"]
+        output["grid_injection_year"] = year_data["data"]["totalOnGridPower"]
+        
+        charge_power_list = year_data["data"]["chargePower"]
+        total_charge_power = sum(float(value) for value in charge_power_list if value != "--")
+        output["battery_injection_year"] = total_charge_power
+        
+        discharge_power_list = year_data["data"]["dischargePower"]
+        total_discharge_power = sum(float(value) for value in discharge_power_list if value != "--")
+        output["battery_consumption_year"] = total_discharge_power
+        
+        use_power_list = year_data["data"]["usePower"]
+        charge_value_this_month = use_power_list[datetime.now().month - 1]
+        if charge_value_this_month != "--":
+           charge_value_this_month = float(charge_value_this_month)
+        else:
+           charge_value_this_month = 0
+        output["house_load_month"] = charge_value_this_month
+        
+        # Lifetime calculations
+        lifetime_data = self.call_energy_balance(ENERGY_BALANCE_CALL_TYPE.LIFETIME)
+        output["panel_production_lifetime"] = lifetime_data["data"]["totalProductPower"]
+        output["panel_production_consumption_lifetime"] = lifetime_data["data"]["totalSelfUsePower"]
+        output["house_load_lifetime"] = lifetime_data["data"]["totalUsePower"]
+        output["grid_consumption_lifetime"] = lifetime_data["data"]["totalBuyPower"]
+        output["grid_injection_lifetime"] = lifetime_data["data"]["totalOnGridPower"]
+        
+        lifetime_charge_power_list = lifetime_data["data"]["chargePower"]
+        lifetime_total_charge_power = sum(float(value) for value in lifetime_charge_power_list if value != "--")
+        output["battery_injection_lifetime"] = lifetime_total_charge_power
+        
+        lifetime_discharge_power_list = lifetime_data["data"]["dischargePower"]
+        lifetime_total_discharge_power = sum(float(value) for value in lifetime_discharge_power_list if value != "--")
+        output["battery_consumption_lifetime"] = lifetime_total_discharge_power
+        
+        
     def call_energy_balance(self, call_type: ENERGY_BALANCE_CALL_TYPE):
         currentTime = datetime.now()
         timestampNow = currentTime.timestamp() * 1000
+        current_day = currentTime.day
         current_month = currentTime.month
         current_year = currentTime.year
         first_day_of_month = datetime(current_year, current_month, 1)
         first_day_of_year = datetime(current_year, 1, 1)
+        current_day_of_year = datetime(current_year, current_month, current_day)
 
         if call_type == ENERGY_BALANCE_CALL_TYPE.MONTH:
             timestamp = first_day_of_month.timestamp() * 1000
             dateStr = first_day_of_month.strftime("%Y-%m-%d %H:%M:%S")
         elif call_type == ENERGY_BALANCE_CALL_TYPE.YEAR:
+            timestamp = first_day_of_year.timestamp() * 1000
+            dateStr = first_day_of_year.strftime("%Y-%m-%d %H:%M:%S")
+        elif call_type == ENERGY_BALANCE_CALL_TYPE.DAY:
+            timestamp = current_day_of_year.timestamp() * 1000
+            dateStr = current_day_of_year.strftime("%Y-%m-%d %H:%M:%S")
+        else:
             timestamp = first_day_of_year.timestamp() * 1000
             dateStr = first_day_of_year.strftime("%Y-%m-%d %H:%M:%S")
         
@@ -459,6 +574,10 @@ class FusionSolarAPI:
             "application/json": "text/plain, */*",
             "Accept-Encoding": "gzip, deflate, br, zstd",
             "Accept-Language": "en-GB,en;q=0.9",
+            "Host": self.data_host,
+            "Referer": f"https://{self.data_host}{DATA_REFERER_URL}",
+            "X-Requested-With": "XMLHttpRequest",
+            "Roarand": self.csrf
         }
 
         params = {
@@ -466,20 +585,55 @@ class FusionSolarAPI:
              "timeDim": call_type,
              "queryTime": int(timestamp),
              "timeZone": "0.0",
-             "timeZoneStr": "Europe%2FLondon",
-             "dateStr": quote(dateStr),
+             "timeZoneStr": "Europe/London",
+             "dateStr": dateStr,
              "_": int(timestampNow)
         }
          
         energy_balance_url = f"https://{self.data_host}{ENERGY_BALANCE_URL}?{urlencode(params)}"
         _LOGGER.debug("Getting Energy Balance at: %s", energy_balance_url)
-        #energy_balance_response = requests.get(energy_balance_url, headers=headers, cookies=cookies)
-        #_LOGGER.debug("Energy Balance Response: %s", energy_balance_response.text)
-        #try:
-            #energy_balance_data = energy_balance_response.json()
-            #_LOGGER.debug("Energy Balance JSON: %s", energy_balance_data)
-        #except Exception as ex:
-            #_LOGGER.error("Error processing Energy Balance response: JSON format invalid!")
+        energy_balance_response = requests.get(energy_balance_url, headers=headers, cookies=cookies)
+        _LOGGER.debug("Energy Balance Response: %s", energy_balance_response.text)
+        try:
+            energy_balance_data = energy_balance_response.json()
+        except Exception as ex:
+            _LOGGER.error("Error processing Energy Balance response: JSON format invalid!")
+        
+        return energy_balance_data
+
+
+    def logout(self) -> bool:
+        """Disconnect from api."""
+        self.connected = False
+        self._stop_session_monitor()
+        return True
+
+    def _renew_session(self) -> None:
+        """Simulate session renewal."""
+        _LOGGER.info("Renewing session.")
+        self.connected = False
+        self.dp_session = ""
+        self.login()
+
+    def _session_monitor(self) -> None:
+        """Monitor session and renew if needed."""
+        while not self._stop_event.is_set():
+            if self.connected == False:
+                self._renew_session()
+            time.sleep(60)  # Check every 60 seconds
+
+    def _start_session_monitor(self) -> None:
+        """Start the session monitor thread."""
+        if self._session_thread is None or not self._session_thread.is_alive():
+            self._stop_event.clear()
+            self._session_thread = threading.Thread(target=self._session_monitor, daemon=True)
+            self._session_thread.start()
+
+    def _stop_session_monitor(self) -> None:
+        """Stop the session monitor thread."""
+        self._stop_event.set()
+        if self._session_thread is not None:
+            self._session_thread.join()
 
     def get_device_unique_id(self, device_id: str, device_type: DeviceType) -> str:
         """Return a unique device id."""
@@ -510,6 +664,7 @@ class FusionSolarAPI:
                 _LOGGER.debug("%s: Value being returned is int: %i", device_id, value)
                 return int(value)
         except ValueError:
+            _LOGGER.error(f"Value '{value}' for '{device_id}' can't be converted to float.")
             raise ValueError(f"Value '{value}' for '{device_id}' can't be converted to float.")
 
 class APIAuthError(Exception):

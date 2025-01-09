@@ -35,183 +35,72 @@ After setting up the Integration you will get a Device which will have the follo
 * Panels Production Year (kWh)
 * Panels Production Lifetime (kWh)
 * Panels Production Consumption Today (kWh)
+* Panels Production Consumption Month (kWh)
+* Panels Production Consumption Year (kWh)
+* Panels Production Consumption Lifetime (kWh)
 * House Load (kW)
 * House Load Today (kWh)
+* House Load Month (kWh)
+* House Load Year (kWh)
+* House Load Lifetime (kWh)
 * Battery Consumption (kW)
-* Battery Injections (kW)
+* Battery Consumption Today (kWh)
+* Battery Consumption Month (kWh)
+* Battery Consumption Year (kWh)
+* Battery Consumption Lifetime (kWh)
+* Battery Injection (kW)
+* Battery Injection Today (kWh)
+* Battery Injection Month (kWh)
+* Battery Injection Year (kWh)
+* Battery Injection Lifetime (kWh)
 * Grid Consumption (kW)
 * Grid Consumption Today (kWh)
+* Grid Consumption Month (kWh)
+* Grid Consumption Year (kWh)
+* Grid Consumption Lifetime (kWh)
 * Grid Injection (kW)
 * Grid Injection Today (kWh)
+* Grid Injection Month (kWh)
+* Grid Injection Year (kWh)
+* Grid Injection Lifetime (kWh)
 * Battery Percentage (%)
 * Battery Capacity
 * Last Authentication Time
 
 ## Card configuration
 
-I have configured a card using picture-elements that looks something like this:
-<a href="#"><img src="https://raw.githubusercontent.com/hcraveiro/Home-Assistant-FusionSolar-App/main/assets/card.png"></a>
-
-You can see my configuration here:
+I have configured a card using power-flow-card-plus and thec onfiguration is this:
 
 ```yaml
-type: picture-elements
-elements:
-  - type: state-label
-    entity: sensor.house_load_power
-    style:
-      top: 80%
-      left: 50%
-      color: black
-  - type: state-label
+type: custom:power-flow-card-plus
+entities:
+  battery:
+    state_of_charge: sensor.battery_percentage
+    entity:
+      consumption: sensor.battery_consumption_power
+      production: sensor.battery_injection_power
+  grid:
+    entity:
+      consumption: sensor.grid_consumption_power
+      production: sensor.grid_injection_power
+    secondary_info: {}
+  solar:
+    secondary_info: {}
     entity: sensor.panel_production_power
-    style:
-      top: 30%
-      left: 50%
-      color: black
-  - type: conditional
-    conditions:
-      - entity: sensor.panel_production_power
-        state_not: "0.0"
-    elements:
-      - type: icon
-        entity: sensor.panel_production_power
-        icon: mdi:arrow-down
-        style:
-          top: 48%
-          left: 51%
-          color: orange
-          width: 31px
-          height: 30px
-  - type: conditional
-    conditions:
-      - entity: sensor.battery_consumption_power
-        state_not: "0.0"
-      - entity: sensor.battery_injection_power
-        state: "0.0"
-    elements:
-      - type: state-label
-        entity: sensor.battery_consumption_power
-        style:
-          top: 54%
-          left: 18%
-          color: black
-      - type: icon
-        entity: sensor.battery_consumption_power
-        icon: mdi:arrow-right
-        style:
-          top: 53%
-          left: 40%
-          color: cadetblue
-          width: 30px
-          height: 32px
-  - type: conditional
-    conditions:
-      - entity: sensor.battery_injection_power
-        state_not: "0.0"
-      - entity: sensor.battery_consumption_power
-        state: "0.0"
-    elements:
-      - type: state-label
-        entity: sensor.battery_injection_power
-        style:
-          top: 54%
-          left: 18%
-          color: black
-      - type: icon
-        entity: sensor.battery_consumption_power
-        icon: mdi:arrow-left
-        style:
-          top: 49%
-          left: 40%
-          color: cadetblue
-          width: 30px
-          height: 30px
-  - type: conditional
-    conditions:
-      - entity: sensor.battery_consumption_power
-        state: "0.0"
-      - entity: sensor.battery_injection_power
-        state: "0.0"
-    elements:
-      - type: state-label
-        entity: sensor.battery_consumption_power
-        style:
-          top: 54%
-          left: 18%
-          color: black
-  - type: conditional
-    conditions:
-      - entity: sensor.grid_consumption_power
-        state_not: "0.0"
-      - entity: sensor.grid_injection_power
-        state: "0.0"
-    elements:
-      - type: state-label
-        entity: sensor.grid_consumption_power
-        style:
-          top: 55%
-          left: 83%
-          color: black
-      - type: icon
-        entity: sensor.grid_consumption_power
-        icon: mdi:arrow-left
-        style:
-          top: 52%
-          left: 60%
-          color: cadetblue
-          width: 30px
-          height: 26px
-  - type: conditional
-    conditions:
-      - entity: sensor.grid_injection_power
-        state_not: "0.0"
-      - entity: sensor.grid_consumption_power
-        state: "0.0"
-    elements:
-      - type: state-label
-        entity: sensor.grid_injection_power
-        style:
-          top: 55%
-          left: 83%
-          color: black
-      - type: icon
-        entity: sensor.grid_injection_power
-        icon: mdi:arrow-right
-        style:
-          top: 49%
-          left: 60%
-          color: cadetblue
-          width: 30px
-          height: 28px
-  - type: conditional
-    conditions:
-      - entity: sensor.grid_consumption_power
-        state: "0.0"
-      - entity: sensor.grid_injection_power
-        state: "0.0"
-    elements:
-      - type: state-label
-        entity: sensor.grid_consumption_power
-        style:
-          top: 55%
-          left: 83%
-          color: black
-  - type: state-label
-    entity: sensor.battery_percentage
-    style:
-      top: 45%
-      left: 15%
-      color: black
-      width: 21px
-      height: 33px
-  - type: state-label
-    entity: sensor.house_load_last_updated_label
-    style:
-      top: 97%
-      left: 21%
-      color: grey
-image: /local/fusionsolar.png
+  home:
+    secondary_info: {}
+    entity: sensor.house_load_power
+clickable_entities: true
+display_zero_lines: true
+use_new_flow_rate_model: true
+w_decimals: 0
+kw_decimals: 1
+min_flow_rate: 0.75
+max_flow_rate: 6
+max_expected_power: 2000
+min_expected_power: 0.01
+watt_threshold: 1000
+transparency_zero_lines: 0
 ```
 
 You can find the fusionsolar.png in assets folder. You need to put it in 'www' folder (inside /config).
