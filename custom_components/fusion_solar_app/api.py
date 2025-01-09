@@ -361,7 +361,7 @@ class FusionSolarAPI:
                 raise APIAuthError("Error processing response: JSON format invalid!\r\nCookies: %s\r\nHeader: %s\r\n%s", cookies, headers, response.text)
 
             if "data" not in data or "flow" not in data["data"]:
-                _LOGGER.debug("Error on data structure!")
+                _LOGGER.error("Error on data structure!")
                 raise APIDataStructureError("Error on data structure!")
 
             # Process nodes to gather required information
@@ -411,7 +411,7 @@ class FusionSolarAPI:
             output["exit_code"] = "SUCCESS"
             _LOGGER.debug("output JSON: %s", output)
         else:
-            _LOGGER.debug("Error on data structure! %s", response.text)
+            _LOGGER.error("Error on data structure! %s", response.text)
             raise APIDataStructureError("Error on data structure! %s", response.text)
 
         """Get devices on api."""
@@ -597,7 +597,7 @@ class FusionSolarAPI:
         try:
             energy_balance_data = energy_balance_response.json()
         except Exception as ex:
-            _LOGGER.error("Error processing Energy Balance response: JSON format invalid!")
+            _LOGGER.warn("Error processing Energy Balance response: JSON format invalid!")
         
         return energy_balance_data
 
@@ -653,19 +653,19 @@ class FusionSolarAPI:
             raise KeyError(f"'{device_id}' not found.")
 
         value = output[device_id.lower().replace(" ", "_")]
-        if value is None:
+        if value is None or value == 'None':
             return default  # Retorna o valor padrão se for None
 
         try:
             if device_type == DeviceType.SENSOR_KW or device_type == DeviceType.SENSOR_KWH:
-               _LOGGER.debug("%s: Value being returned is float: %f", device_id, value)
+               _LOGGER.debug("%s: Value being returned is float: %s", device_id, value)
                return round(float(value), 4)
             else:
                 _LOGGER.debug("%s: Value being returned is int: %i", device_id, value)
                 return int(value)
         except ValueError:
-            _LOGGER.error(f"Value '{value}' for '{device_id}' can't be converted to float.")
-            raise ValueError(f"Value '{value}' for '{device_id}' can't be converted to float.")
+            _LOGGER.warn(f"Value '{value}' for '{device_id}' can't be converted.")
+            return 0.0
 
 class APIAuthError(Exception):
     """Exception class for auth error."""
