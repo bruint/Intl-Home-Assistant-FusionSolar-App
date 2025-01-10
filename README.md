@@ -69,7 +69,7 @@ After setting up the Integration you will get a Device which will have the follo
 
 ## Card configuration
 
-I have configured a card using power-flow-card-plus and thec onfiguration is this:
+I have configured a card using power-flow-card-plus and the configuration looks like this:
 
 ```yaml
 type: custom:power-flow-card-plus
