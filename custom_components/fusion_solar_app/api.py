@@ -10,6 +10,7 @@ import json
 from typing import Dict, Optional
 from urllib.parse import unquote, quote, urlparse, urlencode
 from datetime import datetime, timedelta, timezone
+from dateutil.relativedelta import relativedelta
 from .const import DOMAIN, PUBKEY_URL, LOGIN_HEADERS_1_STEP_REFERER, LOGIN_HEADERS_2_STEP_REFERER, LOGIN_VALIDATE_USER_URL, DATA_URL, STATION_LIST_URL, KEEP_ALIVE_URL, DATA_REFERER_URL, ENERGY_BALANCE_URL
 from .utils import extract_numeric, encrypt_password, generate_nonce
 
@@ -28,6 +29,7 @@ class ENERGY_BALANCE_CALL_TYPE(StrEnum):
     """Device types."""
 
     DAY = "2"
+    PREVIOUS_MONTH = "3"
     MONTH = "4"
     YEAR = "5"
     LIFETIME = "6"
@@ -35,35 +37,43 @@ class ENERGY_BALANCE_CALL_TYPE(StrEnum):
 DEVICES = [
     {"id": "House Load Power", "type": DeviceType.SENSOR_KW, "icon": "mdi:home-lightning-bolt-outline"},
     {"id": "House Load Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:home-lightning-bolt-outline"},
+    {"id": "House Load Week", "type": DeviceType.SENSOR_KWH, "icon": "mdi:home-lightning-bolt-outline"},
     {"id": "House Load Month", "type": DeviceType.SENSOR_KWH, "icon": "mdi:home-lightning-bolt-outline"},
     {"id": "House Load Year", "type": DeviceType.SENSOR_KWH, "icon": "mdi:home-lightning-bolt-outline"},
     {"id": "House Load Lifetime", "type": DeviceType.SENSOR_KWH, "icon": "mdi:home-lightning-bolt-outline"},
     {"id": "Panel Production Power", "type": DeviceType.SENSOR_KW, "icon": "mdi:solar-panel"},
     {"id": "Panel Production Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
+    {"id": "Panel Production Week", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
+    {"id": "Panel Production Week", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
     {"id": "Panel Production Month", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
     {"id": "Panel Production Year", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
     {"id": "Panel Production Lifetime", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
     {"id": "Panel Production Consumption Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
+    {"id": "Panel Production Consumption Week", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
     {"id": "Panel Production Consumption Month", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
     {"id": "Panel Production Consumption Year", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
     {"id": "Panel Production Consumption Lifetime", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
     {"id": "Battery Consumption Power", "type": DeviceType.SENSOR_KW, "icon": "mdi:battery-charging-100"},
     {"id": "Battery Consumption Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging-100"},
+    {"id": "Battery Consumption Week", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging-100"},
     {"id": "Battery Consumption Month", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging-100"},
     {"id": "Battery Consumption Year", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging-100"},
     {"id": "Battery Consumption Lifetime", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging-100"},
     {"id": "Battery Injection Power", "type": DeviceType.SENSOR_KW, "icon": "mdi:battery-charging"},
     {"id": "Battery Injection Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging"},
+    {"id": "Battery Injection Week", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging"},
     {"id": "Battery Injection Month", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging"},
     {"id": "Battery Injection Year", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging"},
     {"id": "Battery Injection Lifetime", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging"},
     {"id": "Grid Consumption Power", "type": DeviceType.SENSOR_KW, "icon": "mdi:transmission-tower-export"},
     {"id": "Grid Consumption Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-export"},
+    {"id": "Grid Consumption Week", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-export"},
     {"id": "Grid Consumption Month", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-export"},
     {"id": "Grid Consumption Year", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-export"},
     {"id": "Grid Consumption Lifetime", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-export"},
     {"id": "Grid Injection Power", "type": DeviceType.SENSOR_KW, "icon": "mdi:transmission-tower-import"},
     {"id": "Grid Injection Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-import"},
+    {"id": "Grid Injection Week", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-import"},
     {"id": "Grid Injection Month", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-import"},
     {"id": "Grid Injection Year", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-import"},
     {"id": "Grid Injection Lifetime", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-import"},
@@ -208,26 +218,26 @@ class FusionSolarAPI:
                             self._start_session_monitor()
                             return True
                         else:
-                            _LOGGER.debug("DP Session not found in cookies.")
+                            _LOGGER.error("DP Session not found in cookies.")
                             self.connected = False
                             raise APIAuthError("DP Session not found in cookies.")
                     else:
-                        _LOGGER.debug("No cookies found in the response headers.")
+                        _LOGGER.error("No cookies found in the response headers.")
                         self.connected = False
                         raise APIAuthError("No cookies found in the response headers.")
                 else:
-                    _LOGGER.debug("Redirect failed: %s", redirect_response.status_code)
-                    _LOGGER.debug("%s", redirect_response.text)
+                    _LOGGER.error("Redirect failed: %s", redirect_response.status_code)
+                    _LOGGER.error("%s", redirect_response.text)
                     self.connected = False
                     raise APIAuthError("Redirect failed.")
             else:
-                _LOGGER.debug("Login response did not include redirect information.")
+                _LOGGER.warning("Login response did not include redirect information.")
                 self.connected = False
                 raise APIAuthError("Login response did not include redirect information.")
         else:
-            _LOGGER.debug("Login failed: %s", response.status_code)
-            _LOGGER.debug("Response headers: %s", response.headers)
-            _LOGGER.debug("Response: %s", response.text)
+            _LOGGER.warning("Login failed: %s", response.status_code)
+            _LOGGER.warning("Response headers: %s", response.headers)
+            _LOGGER.warning("Response: %s", response.text)
             self.connected = False
             raise APIAuthError("Login failed.")
 
@@ -315,35 +325,42 @@ class FusionSolarAPI:
         output = {
             "panel_production_power": None,
             "panel_production_today": None,
+            "panel_production_week": None,
             "panel_production_month": None,
             "panel_production_year": None,
             "panel_production_lifetime": None,
             "panel_production_consumption_today": None,
+            "panel_production_consumption_week": None,
             "panel_production_consumption_month": None,
             "panel_production_consumption_year": None,
             "panel_production_consumption_lifetime": None,
             "house_load_power": None,
             "house_load_today": None,
+            "house_load_week": None,
             "house_load_month": None,
             "house_load_year": None,
             "house_load_lifetime": None,
             "grid_consumption_power": None,
             "grid_consumption_today": None,
+            "grid_consumption_week": None,
             "grid_consumption_month": None,
             "grid_consumption_year": None,
             "grid_consumption_lifetime": None,
             "grid_injection_power": None,
             "grid_injection_today": None,
+            "grid_injection_week": None,
             "grid_injection_month": None,
             "grid_injection_year": None,
             "grid_injection_lifetime": None,
             "battery_injection_power": None,
             "battery_injection_today": None,
+            "battery_injection_week": None,
             "battery_injection_month": None,
             "battery_injection_year": None,
             "battery_injection_lifetime": None,
             "battery_consumption_power": None,
             "battery_consumption_today": None,
+            "battery_consumption_week": None,
             "battery_consumption_month": None,
             "battery_consumption_year": None,
             "battery_consumption_lifetime": None,
@@ -442,90 +459,144 @@ class FusionSolarAPI:
     def update_output_with_energy_balance(self, output: Dict[str, Optional[float | str]]):
         self.refresh_csrf()
         
-        # Day calculations
-        day_data = self.call_energy_balance(ENERGY_BALANCE_CALL_TYPE.DAY)
-        output["grid_consumption_today"] = day_data["data"]["totalBuyPower"]
-        output["grid_injection_today"] = day_data["data"]["totalOnGridPower"]
-        
-        # Month calculations
+        # Month energy sensors
         month_data = self.call_energy_balance(ENERGY_BALANCE_CALL_TYPE.MONTH)
         output["panel_production_month"] = month_data["data"]["totalProductPower"]
         output["panel_production_consumption_month"] = month_data["data"]["totalSelfUsePower"]
         
         month_charge_power_list = month_data["data"]["chargePower"]
-        month_total_charge_power = sum(float(value) for value in month_charge_power_list if value != "--")
-        output["battery_injection_month"] = month_total_charge_power
+        if month_charge_power_list:
+            month_total_charge_power = sum(float(value) for value in month_charge_power_list if value != "--")
+            output["battery_injection_month"] = month_total_charge_power
         
         month_discharge_power_list = month_data["data"]["dischargePower"]
-        month_total_discharge_power = sum(float(value) for value in month_discharge_power_list if value != "--")
-        output["battery_consumption_month"] = month_total_discharge_power
-        
-        charge_value_today = month_charge_power_list[datetime.now().day - 1]
-        if charge_value_today != "--":
-           charge_value_today = float(charge_value_today)
-        else:
-           charge_value_today = 0
-        output["battery_injection_today"] = charge_value_today
+        if month_discharge_power_list:
+            month_total_discharge_power = sum(float(value) for value in month_discharge_power_list if value != "--")
+            output["battery_consumption_month"] = month_total_discharge_power
 
-        discharge_value_today = month_discharge_power_list[datetime.now().day - 1]
-        if discharge_value_today != "--":
-           discharge_value_today = float(discharge_value_today)
-        else:
-           discharge_value_today = 0
-        output["battery_consumption_today"] = discharge_value_today
+        # Today energy sensors
+        week_data = self.get_week_data()
+        output["grid_consumption_today"] = week_data[-1]["data"]["totalBuyPower"]
+        output["grid_injection_today"] = week_data[-1]["data"]["totalOnGridPower"]
+
+        if month_charge_power_list:
+            charge_value_today = month_charge_power_list[datetime.now().day - 1]
+            if charge_value_today != "--":
+               charge_value_today = float(charge_value_today)
+            else:
+               charge_value_today = 0
+            output["battery_injection_today"] = charge_value_today
+
+        if month_discharge_power_list:
+            discharge_value_today = month_discharge_power_list[datetime.now().day - 1]
+            if discharge_value_today != "--":
+               discharge_value_today = float(discharge_value_today)
+            else:
+               discharge_value_today = 0
+            output["battery_consumption_today"] = discharge_value_today
         
         output["grid_injection_month"] = month_data["data"]["totalOnGridPower"]
         output["grid_consumption_month"] = month_data["data"]["totalBuyPower"]
 
         month_self_use_list = month_data["data"]["selfUsePower"]
-        self_use_value_today = month_self_use_list[datetime.now().day - 1]
-        if self_use_value_today != "--":
-           self_use_value_today = float(self_use_value_today)
-        else:
-           self_use_value_today = 0
-        output["panel_production_consumption_today"] = self_use_value_today
-        
+        if month_self_use_list:
+            self_use_value_today = month_self_use_list[datetime.now().day - 1]
+            if self_use_value_today != "--":
+               self_use_value_today = float(self_use_value_today)
+            else:
+               self_use_value_today = 0
+            output["panel_production_consumption_today"] = self_use_value_today
+    
         month_house_load_list = month_data["data"]["usePower"]
-        house_load_value_today = month_house_load_list[datetime.now().day - 1]
-        if house_load_value_today != "--":
-           house_load_value_today = float(house_load_value_today)
-        else:
-           house_load_value_today = 0
-        output["house_load_today"] = house_load_value_today
-        
+        if month_house_load_list:
+            house_load_value_today = month_house_load_list[datetime.now().day - 1]
+            if house_load_value_today != "--":
+               house_load_value_today = float(house_load_value_today)
+            else:
+               house_load_value_today = 0
+            output["house_load_today"] = house_load_value_today
+
         month_panel_production_list = month_data["data"]["productPower"]
-        panel_production_value_today = month_panel_production_list[datetime.now().day - 1]
-        if panel_production_value_today != "--":
-           panel_production_value_today = float(panel_production_value_today)
-        else:
-           panel_production_value_today = 0
-        output["panel_production_today"] = panel_production_value_today
+        if month_panel_production_list:
+            panel_production_value_today = month_panel_production_list[datetime.now().day - 1]
+            if panel_production_value_today != "--":
+               panel_production_value_today = float(panel_production_value_today)
+            else:
+               panel_production_value_today = 0
+            output["panel_production_today"] = panel_production_value_today
         
-        # Year calculations
+        # Week energy sensors
+        today = datetime.now()
+        start_day_week = today - timedelta(days=today.weekday())
+
+        days_previous_month = []
+        days_current_month = []
+        
+        for i in range(7):
+            current_day = start_day_week + timedelta(days=i)
+            if current_day.month < today.month:
+                days_previous_month.append(current_day.day)
+            else: 
+                days_current_month.append(current_day.day)
+
+        panel_production_value_week = 0
+        panel_production_consumption_value_week = 0
+        house_load_value_week = 0
+        battery_injection_value_week = 0
+        battery_consumption_value_week = 0
+        
+        if days_previous_month:
+            previous_month_data = self.call_energy_balance(ENERGY_BALANCE_CALL_TYPE.PREVIOUS_MONTH)
+            panel_production_value_week += self.calculate_week_energy(previous_month_data, days_previous_month, "productPower")
+            panel_production_consumption_value_week += self.calculate_week_energy(previous_month_data, days_previous_month, "selfUsePower")
+            house_load_value_week += self.calculate_week_energy(previous_month_data, days_previous_month, "usePower")
+            battery_injection_value_week += self.calculate_week_energy(previous_month_data, days_previous_month, "chargePower")
+            battery_consumption_value_week += self.calculate_week_energy(previous_month_data, days_previous_month, "dischargePower")
+        
+        if days_current_month:
+            panel_production_value_week += self.calculate_week_energy(month_data, days_current_month, "productPower")
+            panel_production_consumption_value_week += self.calculate_week_energy(month_data, days_current_month, "selfUsePower")
+            house_load_value_week += self.calculate_week_energy(month_data, days_current_month, "usePower")
+            battery_injection_value_week += self.calculate_week_energy(month_data, days_current_month, "chargePower")
+            battery_consumption_value_week += self.calculate_week_energy(month_data, days_current_month, "dischargePower")
+
+        output["panel_production_week"] = panel_production_value_week
+        output["panel_production_consumption_week"] = panel_production_consumption_value_week
+        output["house_load_week"] = house_load_value_week
+        output["battery_injection_week"] = battery_injection_value_week
+        output["battery_consumption_week"] = battery_consumption_value_week
+        if week_data:
+            output["grid_consumption_week"] = sum(float(day["data"]["totalBuyPower"]) for day in week_data if day["data"]["totalBuyPower"] != "--")
+            output["grid_injection_week"] = sum(float(day["data"]["totalOnGridPower"]) for day in week_data if day["data"]["totalOnGridPower"] != "--")
+
+        # Year energy sensors
         year_data = self.call_energy_balance(ENERGY_BALANCE_CALL_TYPE.YEAR)
         output["panel_production_consumption_year"] = year_data["data"]["totalSelfUsePower"]
         output["house_load_year"] = year_data["data"]["totalUsePower"]
         output["panel_production_year"] = year_data["data"]["totalProductPower"]
         output["grid_consumption_year"] = year_data["data"]["totalBuyPower"]
         output["grid_injection_year"] = year_data["data"]["totalOnGridPower"]
-        
+
         charge_power_list = year_data["data"]["chargePower"]
-        total_charge_power = sum(float(value) for value in charge_power_list if value != "--")
-        output["battery_injection_year"] = total_charge_power
+        if charge_power_list:
+            total_charge_power = sum(float(value) for value in charge_power_list if value != "--")
+            output["battery_injection_year"] = total_charge_power
         
         discharge_power_list = year_data["data"]["dischargePower"]
-        total_discharge_power = sum(float(value) for value in discharge_power_list if value != "--")
-        output["battery_consumption_year"] = total_discharge_power
+        if discharge_power_list:
+            total_discharge_power = sum(float(value) for value in discharge_power_list if value != "--")
+            output["battery_consumption_year"] = total_discharge_power
         
         use_power_list = year_data["data"]["usePower"]
-        charge_value_this_month = use_power_list[datetime.now().month - 1]
-        if charge_value_this_month != "--":
-           charge_value_this_month = float(charge_value_this_month)
-        else:
-           charge_value_this_month = 0
-        output["house_load_month"] = charge_value_this_month
+        if use_power_list:
+            charge_value_this_month = use_power_list[datetime.now().month - 1]
+            if charge_value_this_month != "--":
+               charge_value_this_month = float(charge_value_this_month)
+            else:
+               charge_value_this_month = 0
+            output["house_load_month"] = charge_value_this_month
         
-        # Lifetime calculations
+        # Lifetime energy sensors
         lifetime_data = self.call_energy_balance(ENERGY_BALANCE_CALL_TYPE.LIFETIME)
         output["panel_production_lifetime"] = lifetime_data["data"]["totalProductPower"]
         output["panel_production_consumption_lifetime"] = lifetime_data["data"]["totalSelfUsePower"]
@@ -534,31 +605,45 @@ class FusionSolarAPI:
         output["grid_injection_lifetime"] = lifetime_data["data"]["totalOnGridPower"]
         
         lifetime_charge_power_list = lifetime_data["data"]["chargePower"]
-        lifetime_total_charge_power = sum(float(value) for value in lifetime_charge_power_list if value != "--")
-        output["battery_injection_lifetime"] = lifetime_total_charge_power
+        if lifetime_charge_power_list:
+            lifetime_total_charge_power = sum(float(value) for value in lifetime_charge_power_list if value != "--")
+            output["battery_injection_lifetime"] = lifetime_total_charge_power
         
         lifetime_discharge_power_list = lifetime_data["data"]["dischargePower"]
-        lifetime_total_discharge_power = sum(float(value) for value in lifetime_discharge_power_list if value != "--")
-        output["battery_consumption_lifetime"] = lifetime_total_discharge_power
+        if lifetime_discharge_power_list:
+            lifetime_total_discharge_power = sum(float(value) for value in lifetime_discharge_power_list if value != "--")
+            output["battery_consumption_lifetime"] = lifetime_total_discharge_power
         
         
-    def call_energy_balance(self, call_type: ENERGY_BALANCE_CALL_TYPE):
+    def call_energy_balance(self, call_type: ENERGY_BALANCE_CALL_TYPE, specific_date: datetime = None):
         currentTime = datetime.now()
         timestampNow = currentTime.timestamp() * 1000
         current_day = currentTime.day
         current_month = currentTime.month
         current_year = currentTime.year
         first_day_of_month = datetime(current_year, current_month, 1)
+        first_day_of_previous_month = first_day_of_month - relativedelta(months=1)
         first_day_of_year = datetime(current_year, 1, 1)
-        current_day_of_year = datetime(current_year, current_month, current_day)
 
         if call_type == ENERGY_BALANCE_CALL_TYPE.MONTH:
             timestamp = first_day_of_month.timestamp() * 1000
             dateStr = first_day_of_month.strftime("%Y-%m-%d %H:%M:%S")
+        elif call_type == ENERGY_BALANCE_CALL_TYPE.PREVIOUS_MONTH:
+            timestamp = first_day_of_previous_month.timestamp() * 1000
+            dateStr = first_day_of_previous_month.strftime("%Y-%m-%d %H:%M:%S")
+            call_type = ENERGY_BALANCE_CALL_TYPE.MONTH
         elif call_type == ENERGY_BALANCE_CALL_TYPE.YEAR:
             timestamp = first_day_of_year.timestamp() * 1000
             dateStr = first_day_of_year.strftime("%Y-%m-%d %H:%M:%S")
         elif call_type == ENERGY_BALANCE_CALL_TYPE.DAY:
+            if specific_date is not None:
+                specific_year = specific_date.year
+                specific_month = specific_date.month
+                specific_day = specific_date.day
+                current_day_of_year = datetime(specific_year, specific_month, specific_day)
+            else:
+                current_day_of_year = datetime(current_year, current_month, current_day)
+            
             timestamp = current_day_of_year.timestamp() * 1000
             dateStr = current_day_of_year.strftime("%Y-%m-%d %H:%M:%S")
         else:
@@ -601,6 +686,34 @@ class FusionSolarAPI:
         
         return energy_balance_data
 
+    def get_week_data(self):
+        today = datetime.now()
+        start_of_week = today - timedelta(days=today.weekday())  # Segunda-feira da semana corrente
+        days_to_process = []
+        
+        # Determinar dias a processar
+        if today.weekday() == 6:  # Se for domingo
+            days_to_process = [start_of_week + timedelta(days=i) for i in range(7)]
+        else:  # Outros dias da semana
+            days_to_process = [start_of_week + timedelta(days=i) for i in range(today.weekday() + 1)]
+        
+        # Obter dados para cada dia e armazenar no array
+        week_data = []
+        for day in days_to_process:
+            day_data = self.call_energy_balance(ENERGY_BALANCE_CALL_TYPE.DAY, specific_date=day)
+            week_data.append(day_data)
+        
+        return week_data
+
+    def calculate_week_energy(self, data, days, field):
+        sum = 0
+        if data["data"][field]:
+            for day in days:
+                value = data["data"][field][day - 1]
+                if value != "--":
+                    sum += float(value)
+
+        return sum
 
     def logout(self) -> bool:
         """Disconnect from api."""
