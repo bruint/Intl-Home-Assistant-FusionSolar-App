@@ -30,5 +30,5 @@ def extract_numeric(value_with_unit) -> float:
     try:
         return float(value_with_unit.split()[0])
     except (ValueError, AttributeError, IndexError):
-        return None
+        return 0
 
