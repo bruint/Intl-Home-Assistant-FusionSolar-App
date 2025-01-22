@@ -11,7 +11,7 @@ from typing import Dict, Optional
 from urllib.parse import unquote, quote, urlparse, urlencode
 from datetime import datetime, timedelta, timezone
 from dateutil.relativedelta import relativedelta
-from .const import DOMAIN, PUBKEY_URL, LOGIN_HEADERS_1_STEP_REFERER, LOGIN_HEADERS_2_STEP_REFERER, LOGIN_VALIDATE_USER_URL, DATA_URL, STATION_LIST_URL, KEEP_ALIVE_URL, DATA_REFERER_URL, ENERGY_BALANCE_URL
+from .const import DOMAIN, PUBKEY_URL, LOGIN_HEADERS_1_STEP_REFERER, LOGIN_HEADERS_2_STEP_REFERER, LOGIN_VALIDATE_USER_URL, DATA_URL, STATION_LIST_URL, KEEP_ALIVE_URL, DATA_REFERER_URL, ENERGY_BALANCE_URL, LOGIN_DEFAULT_REDIRECT_URL
 from .utils import extract_numeric, encrypt_password, generate_nonce
 
 _LOGGER = logging.getLogger(__name__)
@@ -172,68 +172,71 @@ class FusionSolarAPI:
                 self.connected = False
                 _LOGGER.error("Error processing Login response: JSON format invalid!\r\nRequest Headers: %s\r\nResponse Headers: %s\r\nResponse: %s", headers, response.headers, response.text)
                 raise APIAuthError("Error processing Login response: JSON format invalid!\r\nRequest Headers: %s\r\nResponse Headers: %s\r\nResponse: %s", headers, response.headers, response.text)
-        
+            
+            redirect_url = None
+
             if 'respMultiRegionName' in login_response and login_response['respMultiRegionName']:
                 redirect_info = login_response['respMultiRegionName'][1]  # Extract redirect URL
-                region_name = login_response['respMultiRegionName'][0]
-        
                 redirect_url = f"https://{self.login_host}{redirect_info}"
-
-                redirect_headers = {
-                    "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                    "accept-encoding": "gzip, deflate, br, zstd",
-                    "connection": "keep-alive",
-                    "host": "{self.login_host}",
-                    "referer": f"https://{self.login_host}{LOGIN_HEADERS_2_STEP_REFERER}"
-                }
-        
-                _LOGGER.debug("Redirect to: %s", redirect_url)
-                redirect_response = requests.get(redirect_url, headers=redirect_headers, allow_redirects=False)
-                _LOGGER.debug("Redirect Response: %s", redirect_response.text)
-                response_headers = redirect_response.headers
-                location_header = response_headers.get("Location")
-                _LOGGER.debug("Redirect Response headers: %s", response_headers)
-
-                self.data_host = urlparse(location_header).netloc
-
-                if redirect_response.status_code == 200 or redirect_response.status_code == 302:
-                    cookies = redirect_response.headers.get('Set-Cookie')
-                    if cookies:
-                        dp_session = None
-                        for cookie in cookies.split(';'):
-                            if 'dp-session=' in cookie:
-                                dp_session = cookie.split('=')[1]
-                                break
-        
-                        if dp_session:
-                            _LOGGER.debug("DP Session Cookie: %s", dp_session)
-                            self.dp_session = dp_session
-                            self.connected = True
-                            self.last_session_time = datetime.now(timezone.utc)
-                            self.refresh_csrf()
-                            station_data = self.get_station_list()
-                            self.station = station_data["data"]["list"][0]["dn"]
-                            if self.battery_capacity is None or self.battery_capacity == 0.0:
-                                self.battery_capacity = station_data["data"]["list"][0]["batteryCapacity"]
-                            self._start_session_monitor()
-                            return True
-                        else:
-                            _LOGGER.error("DP Session not found in cookies.")
-                            self.connected = False
-                            raise APIAuthError("DP Session not found in cookies.")
-                    else:
-                        _LOGGER.error("No cookies found in the response headers.")
-                        self.connected = False
-                        raise APIAuthError("No cookies found in the response headers.")
-                else:
-                    _LOGGER.error("Redirect failed: %s", redirect_response.status_code)
-                    _LOGGER.error("%s", redirect_response.text)
-                    self.connected = False
-                    raise APIAuthError("Redirect failed.")
+            elif 'redirectURL'in login_response and login_response['redirectURL']:
+                redirect_info = login_response['redirectURL']  # Extract redirect URL
+                redirect_url = f"https://{self.login_host}{redirect_info}"
             else:
                 _LOGGER.warning("Login response did not include redirect information.")
                 self.connected = False
                 raise APIAuthError("Login response did not include redirect information.")
+
+            redirect_headers = {
+                "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                "accept-encoding": "gzip, deflate, br, zstd",
+                "connection": "keep-alive",
+                "host": "{self.login_host}",
+                "referer": f"https://{self.login_host}{LOGIN_HEADERS_2_STEP_REFERER}"
+            }
+    
+            _LOGGER.debug("Redirect to: %s", redirect_url)
+            redirect_response = requests.get(redirect_url, headers=redirect_headers, allow_redirects=False)
+            _LOGGER.debug("Redirect Response: %s", redirect_response.text)
+            response_headers = redirect_response.headers
+            location_header = response_headers.get("Location")
+            _LOGGER.debug("Redirect Response headers: %s", response_headers)
+
+            self.data_host = urlparse(location_header).netloc
+
+            if redirect_response.status_code == 200 or redirect_response.status_code == 302:
+                cookies = redirect_response.headers.get('Set-Cookie')
+                if cookies:
+                    dp_session = None
+                    for cookie in cookies.split(';'):
+                        if 'dp-session=' in cookie:
+                            dp_session = cookie.split('=')[1]
+                            break
+    
+                    if dp_session:
+                        _LOGGER.debug("DP Session Cookie: %s", dp_session)
+                        self.dp_session = dp_session
+                        self.connected = True
+                        self.last_session_time = datetime.now(timezone.utc)
+                        self.refresh_csrf()
+                        station_data = self.get_station_list()
+                        self.station = station_data["data"]["list"][0]["dn"]
+                        if self.battery_capacity is None or self.battery_capacity == 0.0:
+                            self.battery_capacity = station_data["data"]["list"][0]["batteryCapacity"]
+                        self._start_session_monitor()
+                        return True
+                    else:
+                        _LOGGER.error("DP Session not found in cookies.")
+                        self.connected = False
+                        raise APIAuthError("DP Session not found in cookies.")
+                else:
+                    _LOGGER.error("No cookies found in the response headers.")
+                    self.connected = False
+                    raise APIAuthError("No cookies found in the response headers.")
+            else:
+                _LOGGER.error("Redirect failed: %s", redirect_response.status_code)
+                _LOGGER.error("%s", redirect_response.text)
+                self.connected = False
+                raise APIAuthError("Redirect failed.")
         else:
             _LOGGER.warning("Login failed: %s", response.status_code)
             _LOGGER.warning("Response headers: %s", response.headers)
@@ -415,13 +418,15 @@ class FusionSolarAPI:
                 label = node.get("description", {}).get("label", "")
                 value = node.get("description", {}).get("value", "")
                 if label in node_map:
-                    if label == "neteco.pvms.energy.flow.buy.power" and node.get("flowing", "") == "FORWARD":
-                        output[node_map[label]] = extract_numeric(value)
-                        output["grid_injection_power"] = 0.0
-                    else:
-                        output[node_map[label]] = 0.0
-                        output["grid_injection_power"] = extract_numeric(value)
-            
+                    if label == "neteco.pvms.energy.flow.buy.power":
+                        grid_consumption_injection = extract_numeric(value)
+                        if (output["panel_production_power"] + output["battery_consumption_power"] - output["battery_injection_power"] - output["house_load_power"]) > 0:
+                            output["grid_injection_power"] = grid_consumption_injection
+                            output["grid_consumption_power"] = 0.0
+                        else:
+                            output["grid_consumption_power"] = grid_consumption_injection
+                            output["grid_injection_power"] = 0.0
+
             self.update_output_with_battery_capacity(output)
             self.update_output_with_energy_balance(output)
 

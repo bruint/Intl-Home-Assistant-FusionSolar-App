@@ -7,6 +7,7 @@ MIN_SCAN_INTERVAL = 10
 PUBKEY_URL = "/unisso/pubkey"
 FUSION_SOLAR_HOST = "fusion_solar_host"
 LOGIN_VALIDATE_USER_URL = "/unisso/v3/validateUser.action"
+LOGIN_DEFAULT_REDIRECT_URL = "/rest/dp/web/v1/auth/on-sso-credential-ready"
 LOGIN_HEADERS_1_STEP_REFERER = "/unisso/login.action"
 LOGIN_HEADERS_2_STEP_REFERER = "/pvmswebsite/loginCustomize.html"
 DATA_REFERER_URL = "/uniportal/pvmswebsite/assets/build/cloud.html"
