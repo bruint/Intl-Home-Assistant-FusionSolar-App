@@ -76,7 +76,7 @@ After setting up the Integration you will get a Device which will have the follo
 
 ## Card configuration
 
-I have configured a card using [power-flow-card-plus](https://github.com/flixlix/power-flow-card-plus) that looks something like this:
+I have configured a card using [flixlix](https://github.com/flixlix)'s [power-flow-card-plus](https://github.com/flixlix/power-flow-card-plus) that looks something like this:
 <a href="#"><img src="https://raw.githubusercontent.com/hcraveiro/Home-Assistant-FusionSolar-App/main/assets/card.png"></a>
 
 You can see my configuration here:
