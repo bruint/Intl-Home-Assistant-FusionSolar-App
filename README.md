@@ -9,6 +9,7 @@ Integrate FusionSolar App into your Home Assistant. This Integration was built d
     - [Installation](#installation)
     - [Configuration](#configuration)
     - [Card configuration](#card-configuration)
+    - [FAQ](#faq)
     - [Credits](#credits)
 
 ## Installation
@@ -114,6 +115,21 @@ transparency_zero_lines: 0
 ```
 
 You can find the fusionsolar.png in assets folder. You need to put it in 'www' folder (inside /config).
+
+## FAQ
+
+### I'm not able to login, I'm getting error messages
+
+I built this integration figuring out, with Developer Tools from my browser, how the Frontend of Fusion Solar App calls the API (not the OpenAPI, a specific one for Fusion Solar App).
+
+Unfortunately the way the login is done might differ drastically from region to region, involving sometimes captcha, which I can't (for now) solve. Unless I have accounts credentials for each case, I can't reproduce the behaviour for each case.
+
+If you want to help me solve that, you can do it by using your browser's Developer Tools (usually by pressing F12):
+* Go to your Fusion Solar App URL on the browser (mine is https://eu5.fusionsolar.huawei.com) but don't login yet
+* Go to Network tab (in Developer Tools), have the 'Preserve log' checkbox ticked and then click the 'Clear network log'
+* Press Login button and take a screenshot of the sequence and order of requests on Network tab
+* Forward that to me through email; I will ask for more data, like what is on the Request Headers and Response Headers for each request, what is on the payload, etc.
+* I will try to infer the neccessary logic with that info and the Javascript used by the Frontend to make it work
 
 ## Credits
 
