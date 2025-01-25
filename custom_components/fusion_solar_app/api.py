@@ -384,6 +384,13 @@ class FusionSolarAPI:
                 _LOGGER.error("Error on data structure!")
                 raise APIDataStructureError("Error on data structure!")
 
+            output["panel_production_power"] = 0.0
+            output["battery_consumption_power"] = 0.0
+            output["battery_injection_power"] = 0.0
+            output["grid_consumption_power"] = 0.0
+            output["grid_injection_power"] = 0.0
+            output["house_load_power"] = 0.0
+
             # Process nodes to gather required information
             flow_data_nodes = data["data"]["flow"].get("nodes", [])
             flow_data_links = data["data"]["flow"].get("links", [])
