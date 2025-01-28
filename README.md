@@ -118,6 +118,10 @@ You can find the fusionsolar.png in assets folder. You need to put it in 'www' f
 
 ## FAQ
 
+### Previously I was able to login and now I'm getting an error mentioning that the Login didn't get any redirect information
+
+Unfortunatelly when there are multiple occurrences of failures on the Login, Fusion Solar starts to ask for a captcha. This integration, right now, can't solve it because everything is just backend. I will, in the future, try to solve that to make the Login work with captcha. In the meantime, what worked for me when it happened is rebooting my router so it changes IP address and wait for the Login timeout (configurable on Fusion Solar app, on my case, 6h). After that it should start to work.
+
 ### I'm not able to login, I'm getting error messages
 
 I built this integration figuring out, with Developer Tools from my browser, how the Frontend of Fusion Solar App calls the API (not the OpenAPI, a specific one for Fusion Solar App).
