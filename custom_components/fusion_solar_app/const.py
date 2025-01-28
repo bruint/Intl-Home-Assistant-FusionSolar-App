@@ -6,6 +6,7 @@ DEFAULT_SCAN_INTERVAL = 60
 MIN_SCAN_INTERVAL = 10
 PUBKEY_URL = "/unisso/pubkey"
 FUSION_SOLAR_HOST = "fusion_solar_host"
+LOGIN_FORM_URL = "/unisso/login.action"
 LOGIN_VALIDATE_USER_URL = "/unisso/v3/validateUser.action"
 LOGIN_DEFAULT_REDIRECT_URL = "/rest/dp/web/v1/auth/on-sso-credential-ready"
 LOGIN_HEADERS_1_STEP_REFERER = "/unisso/login.action"
