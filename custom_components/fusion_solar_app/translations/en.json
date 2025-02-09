@@ -8,7 +8,8 @@
     "error": {
       "cannot_connect": "Failed to connect",
       "invalid_auth": "Invalid authentication",
-      "unknown": "Unexpected error"
+      "unknown": "Unexpected error",
+      "captcha_required": "Captcha required"
     },
     "step": {
       "user": {
@@ -23,6 +24,13 @@
           "username": "Username",
           "password": "Password",
           "fusion_solar_host": "Fusion Solar Login Host"
+        }
+      },
+      "captcha": {
+        "title": "Fusion Solar App: Captcha",
+        "description": "{captcha_img}",
+        "data": {
+          "captcha_input": "Captcha"
         }
       }
     }

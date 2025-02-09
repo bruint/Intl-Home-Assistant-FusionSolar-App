@@ -4,8 +4,10 @@ DOMAIN = "fusion_solar_app"
 
 DEFAULT_SCAN_INTERVAL = 60
 MIN_SCAN_INTERVAL = 10
-PUBKEY_URL = "/unisso/pubkey"
 FUSION_SOLAR_HOST = "fusion_solar_host"
+CAPTCHA_INPUT = "captcha_input"
+PUBKEY_URL = "/unisso/pubkey"
+CAPTCHA_URL = "/unisso/verifycode"
 LOGIN_FORM_URL = "/unisso/login.action"
 LOGIN_VALIDATE_USER_URL = "/unisso/v3/validateUser.action"
 LOGIN_DEFAULT_REDIRECT_URL = "/rest/dp/web/v1/auth/on-sso-credential-ready"

@@ -7,11 +7,12 @@ import threading
 import time
 import requests
 import json
+import base64
 from typing import Dict, Optional
 from urllib.parse import unquote, quote, urlparse, urlencode
 from datetime import datetime, timedelta, timezone
 from dateutil.relativedelta import relativedelta
-from .const import DOMAIN, PUBKEY_URL, LOGIN_HEADERS_1_STEP_REFERER, LOGIN_HEADERS_2_STEP_REFERER, LOGIN_VALIDATE_USER_URL, LOGIN_FORM_URL, DATA_URL, STATION_LIST_URL, KEEP_ALIVE_URL, DATA_REFERER_URL, ENERGY_BALANCE_URL, LOGIN_DEFAULT_REDIRECT_URL
+from .const import DOMAIN, PUBKEY_URL, LOGIN_HEADERS_1_STEP_REFERER, LOGIN_HEADERS_2_STEP_REFERER, LOGIN_VALIDATE_USER_URL, LOGIN_FORM_URL, DATA_URL, STATION_LIST_URL, KEEP_ALIVE_URL, DATA_REFERER_URL, ENERGY_BALANCE_URL, LOGIN_DEFAULT_REDIRECT_URL, CAPTCHA_URL
 from .utils import extract_numeric, encrypt_password, generate_nonce
 
 _LOGGER = logging.getLogger(__name__)
@@ -97,10 +98,12 @@ class Device:
 class FusionSolarAPI:
     """Class for Fusion Solar App API."""
 
-    def __init__(self, user: str, pwd: str, login_host: str) -> None:
+    def __init__(self, user: str, pwd: str, login_host: str, captcha_input: str) -> None:
         """Initialise."""
         self.user = user
         self.pwd = pwd
+        self.captcha_input = captcha_input
+        self.captcha_img = None
         self.station = None
         self.battery_capacity = None
         self.login_host = login_host
@@ -117,6 +120,7 @@ class FusionSolarAPI:
     def controller_name(self) -> str:
         """Return the name of the controller."""
         return DOMAIN
+
 
     def login(self) -> bool:
         """Connect to api."""
@@ -151,6 +155,10 @@ class FusionSolarAPI:
             "username": self.user
         }
         
+        _LOGGER.debug("captcha_input=%s", self.captcha_input)
+        if self.captcha_input is not None and self.captcha_input != '':
+            payload["verifycode"] = self.captcha_input
+        
         headers = {
             "Content-Type": "application/json",
             "accept-encoding": "gzip, deflate, br, zstd",
@@ -184,12 +192,17 @@ class FusionSolarAPI:
             else:
                 _LOGGER.warning("Login response did not include redirect information.")
                 self.connected = False
-                login_form_url = f"https://{self.login_host}{LOGIN_FORM_URL}"
-                _LOGGER.debug("Redirecting to Login Form: %s", login_form_url)
-                response = requests.get(login_form_url)
-                _LOGGER.debug("Login Form Response: %s", response.text)
-                _LOGGER.debug("Login Form Response headers: %s", response.headers)
-                raise APIAuthError("Login response did not include redirect information.")
+
+                if 'errorCode' in login_response and login_response['errorCode'] and login_response['errorCode'] == '411':
+                    _LOGGER.warning("Captcha required.")
+                    raise APIAuthCaptchaError("Login requires Captcha.")
+                else:
+                    login_form_url = f"https://{self.login_host}{LOGIN_FORM_URL}"
+                    _LOGGER.debug("Redirecting to Login Form: %s", login_form_url)
+                    response = requests.get(login_form_url)
+                    _LOGGER.debug("Login Form Response: %s", response.text)
+                    _LOGGER.debug("Login Form Response headers: %s", response.headers)
+                    raise APIAuthError("Login response did not include redirect information.")
 
             redirect_headers = {
                 "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
@@ -248,6 +261,17 @@ class FusionSolarAPI:
             _LOGGER.warning("Response: %s", response.text)
             self.connected = False
             raise APIAuthError("Login failed.")
+
+    def set_captcha_img(self):
+        timestampNow = datetime.now().timestamp() * 1000
+        captcha_request_url = f"https://{self.login_host}{CAPTCHA_URL}?timestamp={timestampNow}"
+        _LOGGER.debug("Requesting Captcha at: %s", captcha_request_url)
+        response = requests.get(captcha_request_url)
+        
+        if response.status_code == 200:
+            self.captcha_img = f"data:image/png;base64,{base64.b64encode(response.content).decode('utf-8')}"
+        else:
+            self.captcha_img = None
 
     def refresh_csrf(self):
         if self.csrf is None or datetime.now() - self.csrf_time > timedelta(minutes=5):
@@ -780,6 +804,9 @@ class FusionSolarAPI:
 
 class APIAuthError(Exception):
     """Exception class for auth error."""
+
+class APIAuthCaptchaError(Exception):
+    """Exception class for auth captcha error."""
 
 class APIConnectionError(Exception):
     """Exception class for connection error."""

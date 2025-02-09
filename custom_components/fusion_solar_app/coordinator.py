@@ -14,7 +14,7 @@ from homeassistant.core import DOMAIN, HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import FusionSolarAPI, APIAuthError, Device, DeviceType
-from .const import DEFAULT_SCAN_INTERVAL, FUSION_SOLAR_HOST
+from .const import DEFAULT_SCAN_INTERVAL, FUSION_SOLAR_HOST, CAPTCHA_INPUT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,6 +40,7 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
         self.user = config_entry.data[CONF_USERNAME]
         self.pwd = config_entry.data[CONF_PASSWORD]
         self.login_host = config_entry.data[FUSION_SOLAR_HOST]
+        self.captcha_input = config_entry.data.get("CAPTCHA_INPUT", None)
 
         # set variables from options.  You need a default here incase options have not been set
         self.poll_interval = config_entry.options.get(
@@ -61,7 +62,7 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
         )
 
         # Initialise your api here
-        self.api = FusionSolarAPI(user=self.user, pwd=self.pwd, login_host=self.login_host)
+        self.api = FusionSolarAPI(user=self.user, pwd=self.pwd, login_host=self.login_host, captcha_input=self.captcha_input)
 
     async def async_update_data(self):
         """Fetch data from API endpoint.

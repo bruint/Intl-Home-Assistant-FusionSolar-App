@@ -21,8 +21,8 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 
-from .api import FusionSolarAPI, APIAuthError, APIConnectionError
-from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, MIN_SCAN_INTERVAL, FUSION_SOLAR_HOST
+from .api import FusionSolarAPI, APIAuthError, APIConnectionError, APIAuthCaptchaError
+from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, MIN_SCAN_INTERVAL, FUSION_SOLAR_HOST, CAPTCHA_INPUT
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,19 +36,27 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
     }
 )
 
+STEP_CAPTCHA_DATA_SCHEMA = vol.Schema(
+    {
+        vol.Required(CAPTCHA_INPUT): str,
+    }
+)
+
 
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """Validate the user input allows us to connect.
 
     Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
     """
-    api = FusionSolarAPI(data[CONF_USERNAME], data[CONF_PASSWORD], data[FUSION_SOLAR_HOST])
+    api = FusionSolarAPI(data[CONF_USERNAME], data[CONF_PASSWORD], data[FUSION_SOLAR_HOST], data.get(CAPTCHA_INPUT, None))
     try:
         await hass.async_add_executor_job(api.login)
         # If you cannot connect, raise CannotConnect
         # If the authentication is wrong, raise InvalidAuth
     except APIAuthError as err:
         raise InvalidAuth from err
+    except APIAuthCaptchaError as err:
+        raise InvalidCaptcha from err
     except APIConnectionError as err:
         raise CannotConnect from err
     return {"title": f"Fusion Solar App Integration"}
@@ -85,6 +93,9 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "cannot_connect"
             except InvalidAuth:
                 errors["base"] = "invalid_auth"
+            except InvalidCaptcha:
+                _LOGGER.exception("Captcha failed, redirecting to Captcha screen")
+                return await self.async_step_captcha(user_input)
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
@@ -105,7 +116,7 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Add reconfigure step to allow to reconfigure a config entry."""
-        # This methid displays a reconfigure option in the integration and is
+        # This method displays a reconfigure option in the integration and is
         # different to options.
         # It can be used to reconfigure any of the data submitted when first installed.
         # This is optional and can be removed if you do not want to allow reconfiguration.
@@ -116,12 +127,14 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             try:
-                #user_input[CONF_HOST] = config_entry.data[CONF_HOST]
-                await validate_input(self.hass, user_input)
+                info = await validate_input(self.hass, user_input)
             except CannotConnect:
                 errors["base"] = "cannot_connect"
             except InvalidAuth:
                 errors["base"] = "invalid_auth"
+            except InvalidCaptcha:
+                _LOGGER.exception("Captcha failed, redirecting to Captcha screen")
+                return await self.async_step_captcha(user_input)
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
@@ -141,6 +154,39 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                     vol.Required(FUSION_SOLAR_HOST, default=config_entry.data[FUSION_SOLAR_HOST]): str,
                 }
             ),
+            errors=errors,
+        )
+    
+    async def async_step_captcha(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+    
+        api = FusionSolarAPI(user_input[CONF_USERNAME], user_input[CONF_PASSWORD], user_input[FUSION_SOLAR_HOST], user_input.get(CAPTCHA_INPUT, None))
+        _LOGGER.debug("Obtaining Captcha image...")
+        await self.hass.async_add_executor_job(api.set_captcha_img)
+        captcha_img = api.captcha_img
+        _LOGGER.debug("Got most recent Captcha image...")
+
+        if user_input is not None:
+            captcha_response = user_input.get(CAPTCHA_INPUT)
+    
+            if not captcha_response:
+                _LOGGER.warning("No  Captcha code filled.")
+                errors["base"] = "captcha_required"
+            else:
+                _LOGGER.debug("Validating Login with Captcha...")
+                return await self.async_step_user(user_input)
+    
+        return self.async_show_form(
+            step_id="captcha",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_USERNAME, default=user_input[CONF_USERNAME]): str,
+                    vol.Required(CONF_PASSWORD, default=user_input[CONF_PASSWORD]): str,
+                    vol.Required(FUSION_SOLAR_HOST, default=user_input[FUSION_SOLAR_HOST]): str,
+                    vol.Required(CAPTCHA_INPUT): str,
+                }
+            ),
+            description_placeholders={"captcha_img": '<img id="fusion_solar_app_security_captcha" src="' + captcha_img + '"/>'},
             errors=errors,
         )
 
@@ -177,6 +223,8 @@ class FusionSolarOptionsFlowHandler(OptionsFlow):
 class CannotConnect(HomeAssistantError):
     """Error to indicate we cannot connect."""
 
-
 class InvalidAuth(HomeAssistantError):
     """Error to indicate there is invalid auth."""
+
+class InvalidCaptcha(HomeAssistantError):
+    """Error to indicate there is invalid captcha."""
