@@ -122,9 +122,9 @@ You can find the fusionsolar.png in assets folder. You need to put it in 'www' f
 
 I built this integration figuring out, with Developer Tools from my browser, how the Frontend of Fusion Solar App calls the API (not the OpenAPI, a specific one for Fusion Solar App).
 
-Unfortunately the way the login is done might differ drastically from region to region, involving sometimes captcha, which I can't (for now) solve. Unless I have accounts credentials for each case, I can't reproduce the behaviour for each case.
+Unfortunately the way the login is done might differ drastically from region to region. Unless I have accounts credentials for each case, I can't reproduce the behaviour for each scenario.
 
-If you want to help me solve that, you can do it by using your browser's Developer Tools (usually by pressing F12):
+If you want to help me solve that, either you provide me with credentials to simulate the authentication flow, or you can help me by using your browser's Developer Tools (usually by pressing F12):
 * Go to your Fusion Solar App URL on the browser (mine is https://eu5.fusionsolar.huawei.com) but don't login yet
 * Go to Network tab (in Developer Tools), have the 'Preserve log' checkbox ticked and then click the 'Clear network log'
 * Press Login button and take a screenshot of the sequence and order of requests on Network tab
