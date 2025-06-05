@@ -724,6 +724,7 @@ class FusionSolarAPI:
         for day in days_to_process:
             day_data = self.call_energy_balance(ENERGY_BALANCE_CALL_TYPE.DAY, specific_date=day)
             week_data.append(day_data)
+            time.sleep(1)
         
         return week_data
 
