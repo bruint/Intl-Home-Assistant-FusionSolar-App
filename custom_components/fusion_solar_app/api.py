@@ -199,13 +199,22 @@ class FusionSolarAPI:
                 _LOGGER.warning("Login response did not include redirect information.")
                 self.connected = False
 
-                if 'errorCode' in login_response and login_response['errorCode'] and login_response['errorCode'] == '411':
-                    _LOGGER.warning("Captcha required.")
-                    raise APIAuthCaptchaError("Login requires Captcha.")
+                if 'errorCode' in login_response and login_response['errorCode']:
+                    error_code = login_response['errorCode']
+                    error_msg = login_response.get('errorMsg', 'Unknown error')
+                    _LOGGER.error("Login failed with error code: %s - %s", error_code, error_msg)
+                    
+                    if error_code == '411':
+                        _LOGGER.warning("Captcha required.")
+                        raise APIAuthCaptchaError("Login requires Captcha.")
+                    elif error_code == '401':
+                        raise APIAuthError(f"Invalid credentials: {error_msg}")
+                    else:
+                        raise APIAuthError(f"Login failed: {error_code} - {error_msg}")
                 else:
                     login_form_url = f"https://{self.login_host}{LOGIN_FORM_URL}"
                     _LOGGER.debug("Redirecting to Login Form: %s", login_form_url)
-                    response = requests.get(login_form_url)
+                    response = self.session.get(login_form_url)
                     _LOGGER.debug("Login Form Response: %s", response.text)
                     _LOGGER.debug("Login Form Response headers: %s", response.headers)
                     raise APIAuthError("Login response did not include redirect information.")
@@ -214,7 +223,7 @@ class FusionSolarAPI:
                 "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
                 "accept-encoding": "gzip, deflate, br, zstd",
                 "connection": "keep-alive",
-                "host": "{self.login_host}",
+                "host": f"{self.login_host}",
                 "referer": f"https://{self.login_host}{LOGIN_HEADERS_2_STEP_REFERER}"
             }
     
