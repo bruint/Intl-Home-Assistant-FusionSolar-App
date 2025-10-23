@@ -704,40 +704,91 @@ class FusionSolarAPI:
             month_total_discharge_power = sum(extract_numeric(value) for value in month_discharge_power_list if (value != "--" and value != "null"))
             output["battery_consumption_month"] = month_total_discharge_power
 
-        # Today energy sensors
-        _LOGGER.debug("Getting Today's energy data")
-        week_data = self.get_week_data()
-        output["grid_consumption_today"] = extract_numeric(week_data[-1]["data"]["totalBuyPower"])
-        output["grid_injection_today"] = extract_numeric(week_data[-1]["data"]["totalOnGridPower"])
-
-        if month_charge_power_list:
-            charge_value_today = month_charge_power_list[datetime.now().day - 1]
-            charge_value_today = extract_numeric(charge_value_today)
-            output["battery_injection_today"] = charge_value_today
-
-        if month_discharge_power_list:
-            discharge_value_today = month_discharge_power_list[datetime.now().day - 1]
-            discharge_value_today = extract_numeric(discharge_value_today)
-            output["battery_consumption_today"] = discharge_value_today
+        # Today energy sensors - Use real-time KPI data instead of monthly arrays
+        _LOGGER.debug("Getting Today's energy data from real-time KPI")
+        try:
+            # Get real-time KPI data for today's values
+            kpi_url = f"https://{self.data_host}/rest/pvms/web/station/v1/station/total-real-kpi"
+            kpi_params = {
+                "queryTime": int(time.time() * 1000),
+                "timeZone": 1 if self.session_cookie_name == 'dp-session' else 8,
+                "_": int(time.time() * 1000)
+            }
+            kpi_headers = {
+                "accept": "application/json, text/javascript, */*; q=0.01",
+                "accept-language": "en-GB,en;q=0.7",
+                "cache-control": "no-cache",
+                "origin": f"https://{self.data_host}",
+                "pragma": "no-cache",
+                "referer": f"https://{self.data_host}/pvmswebsite/assets/build/index.html",
+                "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+                "x-non-renewal-session": "true",
+                "x-requested-with": "XMLHttpRequest"
+            }
+            
+            kpi_response = self.session.get(kpi_url, headers=kpi_headers, params=kpi_params)
+            if kpi_response.status_code == 200:
+                kpi_data = kpi_response.json()
+                if kpi_data.get("success") and "data" in kpi_data:
+                    kpi_info = kpi_data["data"]
+                    
+                    # Use real-time KPI data for today's values
+                    output["panel_production_today"] = extract_numeric(kpi_info.get("dailyEnergy", 0))
+                    output["battery_injection_today"] = extract_numeric(kpi_info.get("dailyChargeCapacity", 0))
+                    output["battery_consumption_today"] = extract_numeric(kpi_info.get("dailyDisChargeCapacity", 0))
+                    
+                    _LOGGER.debug("Today's data from KPI: production=%s, battery_charge=%s, battery_discharge=%s", 
+                                 output["panel_production_today"], 
+                                 output["battery_injection_today"], 
+                                 output["battery_consumption_today"])
+                else:
+                    _LOGGER.warning("KPI data not available, using fallback")
+            else:
+                _LOGGER.warning("Failed to get KPI data: %s", kpi_response.status_code)
+        except Exception as e:
+            _LOGGER.error("Error getting today's KPI data: %s", e)
         
+        # Fallback to monthly data if KPI data is not available or incomplete
+        if output["panel_production_today"] == 0.0:
+            month_panel_production_list = month_data["data"]["productPower"]
+            if month_panel_production_list and len(month_panel_production_list) > datetime.now().day - 1:
+                panel_production_value_today = month_panel_production_list[datetime.now().day - 1]
+                if panel_production_value_today != "--" and panel_production_value_today != "null":
+                    output["panel_production_today"] = extract_numeric(panel_production_value_today)
+        
+        if output["battery_injection_today"] == 0.0 and month_charge_power_list:
+            if len(month_charge_power_list) > datetime.now().day - 1:
+                charge_value_today = month_charge_power_list[datetime.now().day - 1]
+                if charge_value_today != "--" and charge_value_today != "null":
+                    output["battery_injection_today"] = extract_numeric(charge_value_today)
 
+        if output["battery_consumption_today"] == 0.0 and month_discharge_power_list:
+            if len(month_discharge_power_list) > datetime.now().day - 1:
+                discharge_value_today = month_discharge_power_list[datetime.now().day - 1]
+                if discharge_value_today != "--" and discharge_value_today != "null":
+                    output["battery_consumption_today"] = extract_numeric(discharge_value_today)
+
+        # Get week data for grid consumption/injection
+        try:
+            week_data = self.get_week_data()
+            if week_data and len(week_data) > 0:
+                output["grid_consumption_today"] = extract_numeric(week_data[-1]["data"]["totalBuyPower"])
+                output["grid_injection_today"] = extract_numeric(week_data[-1]["data"]["totalOnGridPower"])
+        except Exception as e:
+            _LOGGER.error("Error getting week data: %s", e)
+
+        # Try to get house load and self-use from monthly data if available
         month_self_use_list = month_data["data"]["selfUsePower"]
-        if month_self_use_list:
+        if month_self_use_list and len(month_self_use_list) > datetime.now().day - 1:
             self_use_value_today = month_self_use_list[datetime.now().day - 1]
-            self_use_value_today = extract_numeric(self_use_value_today)
-            output["panel_production_consumption_today"] = self_use_value_today
+            if self_use_value_today != "--" and self_use_value_today != "null":
+                output["panel_production_consumption_today"] = extract_numeric(self_use_value_today)
     
         month_house_load_list = month_data["data"]["usePower"]
-        if month_house_load_list:
+        if month_house_load_list and len(month_house_load_list) > datetime.now().day - 1:
             house_load_value_today = month_house_load_list[datetime.now().day - 1]
-            house_load_value_today = extract_numeric(house_load_value_today)
-            output["house_load_today"] = house_load_value_today
-
-        month_panel_production_list = month_data["data"]["productPower"]
-        if month_panel_production_list:
-            panel_production_value_today = month_panel_production_list[datetime.now().day - 1]
-            panel_production_value_today = extract_numeric(panel_production_value_today)
-            output["panel_production_today"] = panel_production_value_today
+            if house_load_value_today != "--" and house_load_value_today != "null":
+                output["house_load_today"] = extract_numeric(house_load_value_today)
         
         # Week energy sensors
         _LOGGER.debug("Getting Week's energy data")
