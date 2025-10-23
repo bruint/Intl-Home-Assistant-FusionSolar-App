@@ -726,35 +726,68 @@ class FusionSolarAPI:
                 "x-requested-with": "XMLHttpRequest"
             }
             
+            # Add CSRF token if available
+            if self.csrf:
+                kpi_headers["roarand"] = self.csrf
+            
             kpi_response = self.session.get(kpi_url, headers=kpi_headers, params=kpi_params)
+            _LOGGER.debug("KPI Response status: %s", kpi_response.status_code)
             if kpi_response.status_code == 200:
                 kpi_data = kpi_response.json()
+                _LOGGER.debug("KPI Response data: %s", kpi_data)
                 if kpi_data.get("success") and "data" in kpi_data:
                     kpi_info = kpi_data["data"]
                     
                     # Use real-time KPI data for today's values
-                    output["panel_production_today"] = extract_numeric(kpi_info.get("dailyEnergy", 0))
-                    output["battery_injection_today"] = extract_numeric(kpi_info.get("dailyChargeCapacity", 0))
-                    output["battery_consumption_today"] = extract_numeric(kpi_info.get("dailyDisChargeCapacity", 0))
+                    daily_energy = kpi_info.get("dailyEnergy", 0)
+                    daily_charge = kpi_info.get("dailyChargeCapacity", 0)
+                    daily_discharge = kpi_info.get("dailyDisChargeCapacity", 0)
+                    
+                    _LOGGER.debug("Raw KPI values: dailyEnergy=%s, dailyCharge=%s, dailyDischarge=%s", 
+                                 daily_energy, daily_charge, daily_discharge)
+                    
+                    # Convert to float directly (KPI data is already numeric)
+                    output["panel_production_today"] = float(daily_energy) if daily_energy is not None else 0.0
+                    output["battery_injection_today"] = float(daily_charge) if daily_charge is not None else 0.0
+                    output["battery_consumption_today"] = float(daily_discharge) if daily_discharge is not None else 0.0
                     
                     _LOGGER.debug("Today's data from KPI: production=%s, battery_charge=%s, battery_discharge=%s", 
                                  output["panel_production_today"], 
                                  output["battery_injection_today"], 
                                  output["battery_consumption_today"])
                 else:
-                    _LOGGER.warning("KPI data not available, using fallback")
+                    _LOGGER.warning("KPI data not available or unsuccessful: %s", kpi_data)
             else:
-                _LOGGER.warning("Failed to get KPI data: %s", kpi_response.status_code)
+                _LOGGER.warning("Failed to get KPI data: %s - %s", kpi_response.status_code, kpi_response.text)
         except Exception as e:
             _LOGGER.error("Error getting today's KPI data: %s", e)
         
         # Fallback to monthly data if KPI data is not available or incomplete
         if output["panel_production_today"] == 0.0:
-            month_panel_production_list = month_data["data"]["productPower"]
-            if month_panel_production_list and len(month_panel_production_list) > datetime.now().day - 1:
-                panel_production_value_today = month_panel_production_list[datetime.now().day - 1]
-                if panel_production_value_today != "--" and panel_production_value_today != "null":
-                    output["panel_production_today"] = extract_numeric(panel_production_value_today)
+            _LOGGER.debug("KPI data was 0, trying fallback methods")
+            
+            # Try station list data as fallback
+            try:
+                station_data = self.get_station_list()
+                if station_data.get("success") and "data" in station_data and "list" in station_data["data"]:
+                    station_list = station_data["data"]["list"]
+                    if len(station_list) > 0:
+                        station_info = station_list[0]
+                        # Try to get daily energy from station data
+                        if "dailyEnergy" in station_info:
+                            output["panel_production_today"] = extract_numeric(station_info["dailyEnergy"])
+                            _LOGGER.debug("Got today's production from station list: %s", output["panel_production_today"])
+            except Exception as e:
+                _LOGGER.debug("Station list fallback failed: %s", e)
+            
+            # Try monthly data as last resort
+            if output["panel_production_today"] == 0.0:
+                month_panel_production_list = month_data["data"]["productPower"]
+                if month_panel_production_list and len(month_panel_production_list) > datetime.now().day - 1:
+                    panel_production_value_today = month_panel_production_list[datetime.now().day - 1]
+                    if panel_production_value_today != "--" and panel_production_value_today != "null":
+                        output["panel_production_today"] = extract_numeric(panel_production_value_today)
+                        _LOGGER.debug("Got today's production from monthly data: %s", output["panel_production_today"])
         
         if output["battery_injection_today"] == 0.0 and month_charge_power_list:
             if len(month_charge_power_list) > datetime.now().day - 1:
