@@ -1,4 +1,6 @@
 {
   "name": "Intl Fusion Solar App",
-  "render_readme": true
+  "render_readme": true,
+  "country": ["AU", "SG", "US", "GB", "DE", "FR", "IT", "ES", "NL", "BE", "AT", "CH", "DK", "SE", "NO", "FI"],
+  "homeassistant": "2023.1.0"
 }
