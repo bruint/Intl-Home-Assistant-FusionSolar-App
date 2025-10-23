@@ -109,12 +109,18 @@ class FusionSolarAPI:
         self.login_host = login_host
         self.data_host = None
         self.dp_session = ""
+        self.bspsession = ""  # For old auth system (sg5/intl)
+        self.session_cookie_name = ""  # Will be set to 'dp-session' or 'bspsession'
         self.connected: bool = False
         self.last_session_time: datetime | None = None
         self._session_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self.csrf = None
         self.csrf_time = None
+        self.uni_csrf = None  # For keep-alive endpoints
+        self.uni_csrf_time = None
+        self.user_id = None  # Dynamic user ID
+        self.session = requests.Session()  # Use session for cookie persistence
 
     @property
     def controller_name(self) -> str:
@@ -128,7 +134,7 @@ class FusionSolarAPI:
         public_key_url = f"https://{self.login_host}{PUBKEY_URL}"
         _LOGGER.debug("Getting Public Key at: %s", public_key_url)
         
-        response = requests.get(public_key_url)
+        response = self.session.get(public_key_url)
         _LOGGER.debug("Pubkey Response Headers: %s\r\nResponse: %s", response.headers, response.text)
         try:
             pubkey_data = response.json()
@@ -170,7 +176,7 @@ class FusionSolarAPI:
         }
         
         _LOGGER.debug("Login Request to: %s", login_url)
-        response = requests.post(login_url, json=payload, headers=headers)
+        response = self.session.post(login_url, json=payload, headers=headers)
         _LOGGER.debug("Login: Request Headers: %s\r\nResponse Headers: %s\r\nResponse: %s", headers, response.headers, response.text)
         if response.status_code == 200:
             try:
@@ -213,43 +219,52 @@ class FusionSolarAPI:
             }
     
             _LOGGER.debug("Redirect to: %s", redirect_url)
-            redirect_response = requests.get(redirect_url, headers=redirect_headers, allow_redirects=False)
+            redirect_response = self.session.get(redirect_url, headers=redirect_headers, allow_redirects=True)
             _LOGGER.debug("Redirect Response: %s", redirect_response.text)
             response_headers = redirect_response.headers
-            location_header = response_headers.get("Location")
             _LOGGER.debug("Redirect Response headers: %s", response_headers)
 
-            self.data_host = urlparse(location_header).netloc
+            # Determine data host from final URL
+            self.data_host = urlparse(redirect_response.url).netloc
+            _LOGGER.debug("Data host: %s", self.data_host)
 
-            if redirect_response.status_code == 200 or redirect_response.status_code == 302:
-                cookies = redirect_response.headers.get('Set-Cookie')
-                if cookies:
-                    dp_session = None
-                    for cookie in cookies.split(';'):
-                        if 'dp-session=' in cookie:
-                            dp_session = cookie.split('=')[1]
-                            break
-    
-                    if dp_session:
-                        _LOGGER.debug("DP Session Cookie: %s", dp_session)
-                        self.dp_session = dp_session
-                        self.connected = True
-                        self.last_session_time = datetime.now(timezone.utc)
-                        self.refresh_csrf()
-                        station_data = self.get_station_list()
-                        self.station = station_data["data"]["list"][0]["dn"]
-                        if self.battery_capacity is None or self.battery_capacity == 0.0:
-                            self.battery_capacity = station_data["data"]["list"][0]["batteryCapacity"]
-                        self._start_session_monitor()
-                        return True
+            if redirect_response.status_code == 200:
+                # Check for session cookies in the session object
+                session_cookie = None
+                session_cookie_name = None
+                
+                for cookie in self.session.cookies:
+                    if cookie.name in ['dp-session', 'bspsession']:
+                        session_cookie = cookie.value
+                        session_cookie_name = cookie.name
+                        break
+                
+                if session_cookie:
+                    _LOGGER.debug("Found %s Cookie: %s", session_cookie_name, session_cookie)
+                    self.session_cookie_name = session_cookie_name
+                    if session_cookie_name == 'dp-session':
+                        self.dp_session = session_cookie
                     else:
-                        _LOGGER.error("DP Session not found in cookies.")
-                        self.connected = False
-                        raise APIAuthError("DP Session not found in cookies.")
+                        self.bspsession = session_cookie
+                    
+                    self.connected = True
+                    self.last_session_time = datetime.now(timezone.utc)
+                    
+                    # Get user ID and CSRF tokens
+                    self._get_user_id()
+                    self.refresh_csrf()
+                    
+                    station_data = self.get_station_list()
+                    self.station = station_data["data"]["list"][0]["dn"]
+                    if self.battery_capacity is None or self.battery_capacity == 0.0:
+                        self.battery_capacity = station_data["data"]["list"][0]["batteryCapacity"]
+                    self._start_session_monitor()
+                    return True
                 else:
-                    _LOGGER.error("No cookies found in the response headers.")
+                    _LOGGER.error("No session cookie found in cookies.")
+                    _LOGGER.debug("Available cookies: %s", [c.name for c in self.session.cookies])
                     self.connected = False
-                    raise APIAuthError("No cookies found in the response headers.")
+                    raise APIAuthError("No session cookie found in cookies.")
             else:
                 _LOGGER.error("Redirect failed: %s", redirect_response.status_code)
                 _LOGGER.error("%s", redirect_response.text)
@@ -262,11 +277,43 @@ class FusionSolarAPI:
             self.connected = False
             raise APIAuthError("Login failed.")
 
+    def _get_user_id(self):
+        """Get user ID dynamically from custom settings endpoint"""
+        try:
+            custom_settings_url = f"https://{self.data_host}/rest/adminhome/website/v1/customsetting"
+            params = {"t": int(time.time() * 1000)}
+            headers = {
+                'accept': '*/*',
+                'accept-language': 'en-GB,en;q=0.7',
+                'cache-control': 'no-cache',
+                'origin': f'https://{self.data_host}',
+                'pragma': 'no-cache',
+                'referer': f'https://{self.data_host}/pvmswebsite/assets/build/index.html',
+                'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+                'x-non-renewal-session': 'true',
+                'x-requested-with': 'XMLHttpRequest'
+            }
+            
+            response = self.session.get(custom_settings_url, headers=headers, params=params)
+            _LOGGER.debug("Custom settings response: %s", response.text)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if 'menuUserChosen' in data and 'userId' in data['menuUserChosen']:
+                    self.user_id = data['menuUserChosen']['userId']
+                    _LOGGER.debug("Got User ID: %s", self.user_id)
+                else:
+                    _LOGGER.warning("No userId found in custom settings response")
+            else:
+                _LOGGER.warning("Custom settings request failed: %s", response.status_code)
+        except Exception as e:
+            _LOGGER.error("Error getting user ID: %s", e)
+
     def set_captcha_img(self):
         timestampNow = datetime.now().timestamp() * 1000
         captcha_request_url = f"https://{self.login_host}{CAPTCHA_URL}?timestamp={timestampNow}"
         _LOGGER.debug("Requesting Captcha at: %s", captcha_request_url)
-        response = requests.get(captcha_request_url)
+        response = self.session.get(captcha_request_url)
         
         if response.status_code == 200:
             self.captcha_img = f"data:image/png;base64,{base64.b64encode(response.content).decode('utf-8')}"
@@ -274,24 +321,155 @@ class FusionSolarAPI:
             self.captcha_img = None
 
     def refresh_csrf(self):
+        """Refresh CSRF token (roarand) for main API endpoints"""
         if self.csrf is None or datetime.now() - self.csrf_time > timedelta(minutes=5):
-            roarand_url = f"https://{self.data_host}{KEEP_ALIVE_URL}"
-            roarand_headers = {
-                "accept": "application/json, text/plain, */*",
-                "accept-encoding": "gzip, deflate, br, zstd",
-                "Referer": f"https://{self.data_host}{DATA_REFERER_URL}"
-            }
-            roarand_cookies = {
-                "locale": "en-us",
-                "dp-session": self.dp_session,
-            }
-            roarand_params = {}
+            # Try different keep-alive endpoints based on auth system
+            endpoints = [
+                f"https://{self.data_host}/rest/dpcloud/auth/v1/keep-alive",
+                f"https://{self.data_host}/rest/neteco/auth/v1/keep-alive", 
+                f"https://{self.data_host}/unisess/v1/auth/session"
+            ]
             
-            _LOGGER.debug("Getting Roarand at: %s", roarand_url)
-            roarand_response = requests.get(roarand_url, headers=roarand_headers, cookies=roarand_cookies, params=roarand_params)
-            self.csrf = roarand_response.json()["payload"]
-            self.csrf_time = datetime.now()
-            _LOGGER.debug(f"CSRF refreshed: {self.csrf}")
+            for endpoint in endpoints:
+                try:
+                    headers = {
+                        "accept": "application/json, text/plain, */*",
+                        "accept-encoding": "gzip, deflate, br, zstd",
+                        "Referer": f"https://{self.data_host}/pvmswebsite/assets/build/index.html"
+                    }
+                    
+                    _LOGGER.debug("Getting CSRF at: %s", endpoint)
+                    response = self.session.get(endpoint, headers=headers)
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        if 'payload' in data:
+                            self.csrf = data['payload']
+                            self.csrf_time = datetime.now()
+                            _LOGGER.debug(f"CSRF refreshed: {self.csrf}")
+                            return
+                        elif 'csrfToken' in data:
+                            self.csrf = data['csrfToken']
+                            self.csrf_time = datetime.now()
+                            _LOGGER.debug(f"CSRF refreshed: {self.csrf}")
+                            return
+                except Exception as e:
+                    _LOGGER.debug("CSRF endpoint %s failed: %s", endpoint, e)
+                    continue
+            
+            _LOGGER.warning("Could not refresh CSRF token from any endpoint")
+    
+    def refresh_uni_csrf(self):
+        """Refresh UNI CSRF token (x-uni-crsf-token) for keep-alive endpoints"""
+        if self.uni_csrf is None or datetime.now() - self.uni_csrf_time > timedelta(minutes=5):
+            # Try different endpoints that might return the uni CSRF token
+            endpoints = [
+                f"https://{self.data_host}/febs/21.40.38/users/profile",
+                f"https://{self.data_host}/rest/sysfenw/v1/events",
+                f"https://{self.data_host}/unisess/v1/auth/session"
+            ]
+            
+            for endpoint in endpoints:
+                try:
+                    response = self.session.get(endpoint)
+                    if response.status_code == 200:
+                        # Check response headers for CSRF token
+                        csrf_header = response.headers.get('x-uni-crsf-token') or response.headers.get('X-Uni-Crsf-Token')
+                        if csrf_header:
+                            self.uni_csrf = csrf_header
+                            self.uni_csrf_time = datetime.now()
+                            _LOGGER.debug(f"UNI CSRF refreshed: {self.uni_csrf}")
+                            return
+                        
+                        # Check response body
+                        try:
+                            data = response.json()
+                            if 'csrfToken' in data:
+                                self.uni_csrf = data['csrfToken']
+                                self.uni_csrf_time = datetime.now()
+                                _LOGGER.debug(f"UNI CSRF refreshed: {self.uni_csrf}")
+                                return
+                        except:
+                            pass
+                except Exception as e:
+                    _LOGGER.debug("UNI CSRF endpoint %s failed: %s", endpoint, e)
+                    continue
+            
+            _LOGGER.warning("Could not refresh UNI CSRF token from any endpoint")
+    
+    def _keep_alive_session(self):
+        """Implement both keep-alive mechanisms"""
+        if not self.user_id:
+            _LOGGER.warning("No user ID available for keep-alive")
+            return False
+        
+        self.refresh_uni_csrf()
+        if not self.uni_csrf:
+            _LOGGER.warning("No UNI CSRF token available for keep-alive")
+            return False
+        
+        success_count = 0
+        
+        # 1. User Profile Keep-Alive
+        try:
+            profile_url = f"https://{self.data_host}/febs/21.40.38/users/{self.user_id}/profile"
+            headers = {
+                'accept': 'application/json',
+                'accept-language': 'en-GB,en;q=0.7',
+                'cache-control': 'no-cache',
+                'origin': f'https://{self.data_host}',
+                'pragma': 'no-cache',
+                'referer': f'https://{self.data_host}/pvmswebsite/assets/build/index.html',
+                'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+                'x-non-renewal-session': 'true',
+                'x-requested-with': 'XMLHttpRequest',
+                'x-uni-crsf-token': self.uni_csrf,
+                'x-user-id': str(self.user_id)
+            }
+            
+            response = self.session.get(profile_url, headers=headers)
+            if response.status_code == 200:
+                _LOGGER.debug("Profile Keep-Alive: SUCCESS")
+                success_count += 1
+            else:
+                _LOGGER.warning("Profile Keep-Alive failed: %s", response.status_code)
+                
+        except Exception as e:
+            _LOGGER.error("Profile Keep-Alive Error: %s", e)
+        
+        # 2. System Events Keep-Alive
+        try:
+            events_url = f"https://{self.data_host}/rest/sysfenw/v1/events"
+            params = {
+                'indexes': '[13253390,13253390,13253390,13253390,13253390,13253390,13253390,13253390,13253390]',
+                'eventIds': '["CloudSOP.sm.privilge.permission.changed","CloudSOP.sm.user.policy.changed","SECONDARY_AUTH_REQUEST_EVENT","cloudsop.fm.website.i18n.refresh","cloudsop.fm.website.alarm.prompt.enabled","cloudsop.fm.website.keytemplate.change","cloudsop.fm.website.alarm.silence.start","cloudsop.fm.website.alarm.silence.stop","cloudsop.sysBroadcast.broadcast"]',
+                't': int(time.time() * 1000)
+            }
+            
+            headers = {
+                'accept': '*/*',
+                'accept-language': 'en-GB,en;q=0.7',
+                'cache-control': 'no-cache',
+                'origin': f'https://{self.data_host}',
+                'pragma': 'no-cache',
+                'referer': f'https://{self.data_host}/pvmswebsite/assets/build/index.html',
+                'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+                'x-non-renewal-session': 'true',
+                'x-requested-with': 'XMLHttpRequest'
+            }
+            
+            response = self.session.get(events_url, headers=headers, params=params)
+            if response.status_code == 200:
+                _LOGGER.debug("Events Keep-Alive: SUCCESS")
+                success_count += 1
+            else:
+                _LOGGER.warning("Events Keep-Alive failed: %s", response.status_code)
+                
+        except Exception as e:
+            _LOGGER.error("Events Keep-Alive Error: %s", e)
+        
+        _LOGGER.debug("Keep-Alive Summary: %d/2 successful", success_count)
+        return success_count > 0
     
     def get_station_id(self):
         return self.get_station_list()["data"]["list"][0]["dn"]
@@ -299,35 +477,45 @@ class FusionSolarAPI:
     def get_station_list(self):
         self.refresh_csrf()
 
-        station_url = f"https://{self.data_host}{STATION_LIST_URL}"
+        station_url = f"https://{self.data_host}/rest/pvms/web/station/v1/station/station-list"
         
+        # Use appropriate headers based on auth system
         station_headers = {
-                "accept": "application/json, text/javascript, /; q=0.01",
-                "accept-encoding": "gzip, deflate, br, zstd",
-                "Content-Type": "application/json",
-                "Origin": f"https://{self.data_host}",
-                "Referer": f"https://{self.data_host}{DATA_REFERER_URL}",
-                "Roarand": f"{self.csrf}",
-            }
+            "accept": "application/json, text/javascript, */*; q=0.01",
+            "accept-language": "en-GB,en;q=0.7",
+            "cache-control": "no-cache",
+            "content-type": "application/json",
+            "origin": f"https://{self.data_host}",
+            "pragma": "no-cache",
+            "referer": f"https://{self.data_host}/pvmswebsite/assets/build/index.html",
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-origin",
+            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+            "x-non-renewal-session": "true",
+            "x-requested-with": "XMLHttpRequest",
+            "x-timezone-offset": "480"
+        }
         
-        station_cookies = {
-                "locale": "en-us",
-                "dp-session": self.dp_session,
-            }
+        if self.csrf:
+            station_headers["roarand"] = self.csrf
+        
+        # Use appropriate timezone based on auth system
+        timezone_offset = 2 if self.session_cookie_name == 'dp-session' else 8
         
         station_payload = {
-                "curPage": 1,
-                "pageSize": 10,
-                "gridConnectedTime": "",
-                "queryTime": 1666044000000,
-                "timeZone": 2,
-                "sortId": "createTime",
-                "sortDir": "DESC",
-                "locale": "en_US",
-            }
+            "curPage": 1,
+            "pageSize": 10,
+            "gridConnectedTime": "",
+            "queryTime": int(time.time() * 1000),
+            "timeZone": timezone_offset,
+            "sortId": "createTime",
+            "sortDir": "DESC",
+            "locale": "en_US",
+        }
         
         _LOGGER.debug("Getting Station at: %s", station_url)
-        station_response = requests.post(station_url, json=station_payload, headers=station_headers, cookies=station_cookies)
+        station_response = self.session.post(station_url, json=station_payload, headers=station_headers)
         json_response = station_response.json()
         _LOGGER.debug("Station info: %s", json_response["data"])
         return json_response
@@ -335,11 +523,6 @@ class FusionSolarAPI:
     def get_devices(self) -> list[Device]:
         self.refresh_csrf()
 
-        cookies = {
-            "locale": "en-us",
-            "dp-session": self.dp_session,
-        }
-        
         headers = {
             "Accept": "application/json",
             "Accept-Encoding": "gzip, deflate, br, zstd",
@@ -350,9 +533,9 @@ class FusionSolarAPI:
         # Fusion Solar App Station parameter
         params = {"stationDn": unquote(self.station)}
         
-        data_access_url = f"https://{self.data_host}{DATA_URL}"
+        data_access_url = f"https://{self.data_host}/rest/pvms/web/station/v1/overview/energy-flow"
         _LOGGER.debug("Getting Data at: %s", data_access_url)
-        response = requests.get(data_access_url, headers=headers, cookies=cookies, params=params)
+        response = self.session.get(data_access_url, headers=headers, params=params)
 
         output = {
             "panel_production_power": 0.0,
@@ -672,34 +855,33 @@ class FusionSolarAPI:
             timestamp = first_day_of_year.timestamp() * 1000
             dateStr = first_day_of_year.strftime("%Y-%m-%d %H:%M:%S")
         
-        cookies = {
-            "locale": "en-us",
-            "dp-session": self.dp_session,
-        }
-        
         headers = {
             "application/json": "text/plain, */*",
             "Accept-Encoding": "gzip, deflate, br, zstd",
             "Accept-Language": "en-GB,en;q=0.9",
             "Host": self.data_host,
-            "Referer": f"https://{self.data_host}{DATA_REFERER_URL}",
+            "Referer": f"https://{self.data_host}/pvmswebsite/assets/build/index.html",
             "X-Requested-With": "XMLHttpRequest",
             "Roarand": self.csrf
         }
+
+        # Use appropriate timezone based on auth system
+        timezone_offset = "0.0" if self.session_cookie_name == 'dp-session' else "8"
+        timezone_str = "Europe/London" if self.session_cookie_name == 'dp-session' else "Asia/Singapore"
 
         params = {
              "stationDn": unquote(self.station),
              "timeDim": call_type,
              "queryTime": int(timestamp),
-             "timeZone": "0.0",
-             "timeZoneStr": "Europe/London",
+             "timeZone": timezone_offset,
+             "timeZoneStr": timezone_str,
              "dateStr": dateStr,
              "_": int(timestampNow)
         }
          
-        energy_balance_url = f"https://{self.data_host}{ENERGY_BALANCE_URL}?{urlencode(params)}"
+        energy_balance_url = f"https://{self.data_host}/rest/pvms/web/station/v1/overview/energy-balance?{urlencode(params)}"
         _LOGGER.debug("Getting Energy Balance at: %s", energy_balance_url)
-        energy_balance_response = requests.get(energy_balance_url, headers=headers, cookies=cookies)
+        energy_balance_response = self.session.get(energy_balance_url, headers=headers)
         _LOGGER.debug("Energy Balance Response: %s", energy_balance_response.text)
         try:
             energy_balance_data = energy_balance_response.json()
@@ -756,7 +938,13 @@ class FusionSolarAPI:
         while not self._stop_event.is_set():
             if self.connected == False:
                 self._renew_session()
-            time.sleep(60)  # Check every 60 seconds
+            else:
+                # Try to keep session alive
+                try:
+                    self._keep_alive_session()
+                except Exception as e:
+                    _LOGGER.warning("Keep-alive failed, will retry: %s", e)
+            time.sleep(30)  # Check every 30 seconds
 
     def _start_session_monitor(self) -> None:
         """Start the session monitor thread."""
