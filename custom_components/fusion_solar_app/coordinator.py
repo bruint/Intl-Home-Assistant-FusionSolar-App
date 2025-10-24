@@ -73,6 +73,19 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
                 self.api.session.cookies.set(name, value)
             # Mark as connected since we have a valid session
             self.api.connected = True
+            
+            # Try to get station data since we have a valid session
+            try:
+                station_data = await self.hass.async_add_executor_job(self.api.get_station_list)
+                if station_data and "data" in station_data and "list" in station_data["data"] and len(station_data["data"]["list"]) > 0:
+                    self.api.station = station_data["data"]["list"][0]["dn"]
+                    if self.api.battery_capacity is None or self.api.battery_capacity == 0.0:
+                        self.api.battery_capacity = station_data["data"]["list"][0]["batteryCapacity"]
+                    _LOGGER.info("Station restored from session: %s", self.api.station)
+                else:
+                    _LOGGER.warning("Could not retrieve station data from restored session")
+            except Exception as e:
+                _LOGGER.warning("Failed to retrieve station data from restored session: %s", e)
 
     async def async_update_data(self):
         """Fetch data from API endpoint.
