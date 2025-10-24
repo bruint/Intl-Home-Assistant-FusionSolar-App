@@ -1140,6 +1140,7 @@ class FusionSolarAPI:
             energy_balance_data = energy_balance_response.json()
         except Exception as ex:
             _LOGGER.warn("Error processing Energy Balance response: JSON format invalid!")
+            energy_balance_data = {"success": False, "data": {}}
         
         return energy_balance_data
 
@@ -1226,10 +1227,14 @@ class FusionSolarAPI:
             _LOGGER.debug("%s: Value being returned is datetime: %s", device_id, self.last_session_time)
             return self.last_session_time
 
-        if device_id.lower().replace(" ", "_") not in output:
+        # Try exact match first (for real-time energy sensors)
+        if device_id in output:
+            value = output[device_id]
+        elif device_id.lower().replace(" ", "_") in output:
+            value = output[device_id.lower().replace(" ", "_")]
+        else:
             raise KeyError(f"'{device_id}' not found.")
 
-        value = output[device_id.lower().replace(" ", "_")]
         if value is None or value == 'None':
             return default  # Retorna o valor padrão se for None
 
