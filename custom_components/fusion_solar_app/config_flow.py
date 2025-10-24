@@ -115,6 +115,12 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                 info = {"title": f"Fusion Solar App Integration"}
                 await self.async_set_unique_id(info.get("title"))
                 self._abort_if_unique_id_configured()
+                
+                # Store session cookies in config data for coordinator to use
+                session_cookies = dict(api.session.cookies)
+                full_data["session_cookies"] = session_cookies
+                _LOGGER.error("CAPTCHA Debug - Storing session cookies in config: %s", session_cookies)
+                
                 return self.async_create_entry(title=info["title"], data=full_data)
                 
             except APIAuthCaptchaError:

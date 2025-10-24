@@ -63,6 +63,16 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
 
         # Initialise your api here
         self.api = FusionSolarAPI(user=self.user, pwd=self.pwd, login_host=self.login_host, captcha_input=self.captcha_input)
+        
+        # Restore session cookies from config flow if available
+        session_cookies = config_entry.data.get("session_cookies", {})
+        if session_cookies:
+            _LOGGER.info("Restoring session cookies from config flow: %s", session_cookies)
+            # Set cookies on the API's session
+            for name, value in session_cookies.items():
+                self.api.session.cookies.set(name, value)
+            # Mark as connected since we have a valid session
+            self.api.connected = True
 
     async def async_update_data(self):
         """Fetch data from API endpoint.
@@ -75,17 +85,25 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
                 await self.hass.async_add_executor_job(self.api.login)
             devices = await self.hass.async_add_executor_job(self.api.get_devices)
         except APIAuthCaptchaError as err:
-            _LOGGER.warning("CAPTCHA required for API access. Integration will retry on next update.")
-            # Don't raise UpdateFailed for CAPTCHA errors - just return empty data
-            # This prevents the integration from becoming unavailable
+            _LOGGER.warning("CAPTCHA required for API access. Session may have expired.")
+            # Mark as disconnected and return empty data
+            self.api.connected = False
             return FusonSolarAPIData(
                 controller_name=self.login_host,
                 devices=[]
             )
         except APIAuthError as err:
-            _LOGGER.error(err)
-            await self.hass.async_add_executor_job(self.api.login)
-            devices = await self.hass.async_add_executor_job(self.api.get_devices) 
+            _LOGGER.warning("Authentication failed, attempting to re-login: %s", err)
+            self.api.connected = False
+            try:
+                await self.hass.async_add_executor_job(self.api.login)
+                devices = await self.hass.async_add_executor_job(self.api.get_devices)
+            except APIAuthCaptchaError:
+                _LOGGER.warning("CAPTCHA required for re-login. Integration will retry on next update.")
+                return FusonSolarAPIData(
+                    controller_name=self.login_host,
+                    devices=[]
+                )
         except Exception as err:
             # This will show entities as unavailable by raising UpdateFailed exception
             _LOGGER.error(err)
