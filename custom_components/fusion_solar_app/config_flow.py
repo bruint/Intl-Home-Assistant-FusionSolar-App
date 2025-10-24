@@ -110,9 +110,13 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
             except APIAuthCaptchaError:
                 _LOGGER.error("CAPTCHA Debug - CAPTCHA still required")
                 errors["base"] = "captcha_required"
-            except APIAuthError:
-                _LOGGER.error("CAPTCHA Debug - Invalid credentials")
-                errors["base"] = "invalid_auth"
+            except APIAuthError as e:
+                if "Incorrect CAPTCHA code" in str(e):
+                    _LOGGER.error("CAPTCHA Debug - Incorrect CAPTCHA provided")
+                    errors["base"] = "captcha_incorrect"
+                else:
+                    _LOGGER.error("CAPTCHA Debug - Invalid credentials")
+                    errors["base"] = "invalid_auth"
             except APIConnectionError:
                 _LOGGER.error("CAPTCHA Debug - Connection error")
                 errors["base"] = "cannot_connect"
@@ -158,6 +162,7 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
             ),
             description_placeholders={"captcha_img": captcha_html},
             errors=errors,
+            description=f"Enter your credentials for {domain}\n\n{captcha_html}",
         )
 
     async def async_step_reconfigure(

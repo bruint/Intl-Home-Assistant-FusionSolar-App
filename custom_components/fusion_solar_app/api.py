@@ -265,9 +265,14 @@ class FusionSolarAPI:
                         _LOGGER.warning("Captcha required.")
                         _LOGGER.info("CAPTCHA Debug - Manual input provided: '%s'", self.captcha_input)
                         
-                        # Always raise CAPTCHA error - let config flow handle manual input
-                        _LOGGER.info("CAPTCHA Debug - Raising CAPTCHA error for manual input handling")
-                        raise APIAuthCaptchaError("Login requires Captcha.")
+                        # If CAPTCHA was provided but still getting 411, it means the CAPTCHA was incorrect
+                        if self.captcha_input and self.captcha_input.strip():
+                            _LOGGER.error("CAPTCHA Debug - CAPTCHA was provided but still getting 411 error - CAPTCHA was incorrect")
+                            raise APIAuthError("Incorrect CAPTCHA code provided")
+                        else:
+                            # No CAPTCHA provided, need to show CAPTCHA form
+                            _LOGGER.info("CAPTCHA Debug - No CAPTCHA provided, raising CAPTCHA error for manual input handling")
+                            raise APIAuthCaptchaError("Login requires Captcha.")
                     elif error_code == '401':
                         raise APIAuthError(f"Invalid credentials: {error_msg}")
                     else:
