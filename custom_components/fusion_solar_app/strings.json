@@ -17,7 +17,7 @@
           "fusion_solar_host": "Fusion Solar Login Host"
         }
       },
-      "credentials": {
+      "captcha": {
         "title": "Fusion Solar App: Credentials",
         "description": "{captcha_img}",
         "data": {

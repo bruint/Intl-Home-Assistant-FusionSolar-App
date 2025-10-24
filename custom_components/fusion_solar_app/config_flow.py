@@ -87,7 +87,7 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors
         )
 
-    async def async_step_credentials(
+    async def async_step_captcha(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle the credentials step - username, password, and CAPTCHA."""
@@ -161,12 +161,16 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
         _LOGGER.error("CAPTCHA Debug - HTML to display: %s", captcha_html[:100] + "..." if len(captcha_html) > 100 else captcha_html)
         
         return self.async_show_form(
-            step_id="credentials",
-            data_schema=STEP_CREDENTIALS_DATA_SCHEMA,
-            description_placeholders={
-                "captcha_img": captcha_html,
-                "domain": domain
-            },
+            step_id="captcha",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_USERNAME, default=""): str,
+                    vol.Required(CONF_PASSWORD, default=""): str,
+                    vol.Required(FUSION_SOLAR_HOST, default=domain): str,
+                    vol.Required(CAPTCHA_INPUT): str,
+                }
+            ),
+            description_placeholders={"captcha_img": captcha_html},
             errors=errors,
         )
 
@@ -193,7 +197,7 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
             except InvalidCaptcha:
                 _LOGGER.exception("Captcha failed, redirecting to Credentials screen")
                 self._input_data = user_input  # Store the original user data
-                return await self.async_step_credentials()
+                return await self.async_step_captcha()
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
