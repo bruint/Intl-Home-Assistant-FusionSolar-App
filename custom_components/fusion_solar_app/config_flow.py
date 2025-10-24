@@ -167,6 +167,9 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
         
         if user_input is not None:
             captcha_response = user_input.get(CAPTCHA_INPUT, "").strip()
+            _LOGGER.info("CAPTCHA Debug - Raw user_input: %s", user_input)
+            _LOGGER.info("CAPTCHA Debug - CAPTCHA_INPUT constant: %s", CAPTCHA_INPUT)
+            _LOGGER.info("CAPTCHA Debug - Extracted captcha_response: '%s'", captcha_response)
     
             if not captcha_response:
                 _LOGGER.warning("No Captcha code filled.")
@@ -176,6 +179,7 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                 _LOGGER.info("CAPTCHA Debug - Input: '%s', Length: %d", captcha_response, len(captcha_response))
                 # Create API with the CAPTCHA input
                 api = FusionSolarAPI(original_data[CONF_USERNAME], original_data[CONF_PASSWORD], original_data[FUSION_SOLAR_HOST], captcha_response)
+                _LOGGER.info("CAPTCHA Debug - API created with captcha_input: '%s'", api.captcha_input)
                 try:
                     _LOGGER.info("CAPTCHA Debug - Attempting login with CAPTCHA: %s", captcha_response)
                     await self.hass.async_add_executor_job(api.login)

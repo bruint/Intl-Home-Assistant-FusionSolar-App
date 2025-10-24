@@ -15,14 +15,9 @@ from dateutil.relativedelta import relativedelta
 from .const import DOMAIN, PUBKEY_URL, LOGIN_HEADERS_1_STEP_REFERER, LOGIN_HEADERS_2_STEP_REFERER, LOGIN_VALIDATE_USER_URL, LOGIN_FORM_URL, DATA_URL, STATION_LIST_URL, KEEP_ALIVE_URL, DATA_REFERER_URL, ENERGY_BALANCE_URL, LOGIN_DEFAULT_REDIRECT_URL, CAPTCHA_URL
 from .utils import extract_numeric, encrypt_password, generate_nonce
 
-# Try to import CAPTCHA solver, but make it optional
-try:
-    from .captcha_solver import CaptchaSolver
-    CAPTCHA_SOLVER_AVAILABLE = True
-except ImportError as e:
-    _LOGGER.warning("CAPTCHA solver not available: %s", e)
-    CAPTCHA_SOLVER_AVAILABLE = False
-    CaptchaSolver = None
+# CAPTCHA solver disabled - manual input only
+CAPTCHA_SOLVER_AVAILABLE = False
+CaptchaSolver = None
 
 _LOGGER = logging.getLogger(__name__)
 
