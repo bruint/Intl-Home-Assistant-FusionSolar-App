@@ -407,7 +407,11 @@ class FusionSolarAPI:
 
     def refresh_csrf(self):
         """Refresh CSRF token (roarand) for main API endpoints"""
+        _LOGGER.info("Refresh CSRF called - Current CSRF: %s, Time since last refresh: %s", 
+                     self.csrf, datetime.now() - self.csrf_time if self.csrf_time else "Never")
+        
         if self.csrf is None or datetime.now() - self.csrf_time > timedelta(minutes=5):
+            _LOGGER.info("CSRF token needs refresh - trying keep-alive endpoints")
             # Try different keep-alive endpoints based on auth system
             endpoints = [
                 f"https://{self.data_host}/rest/dpcloud/auth/v1/keep-alive",
@@ -436,7 +440,7 @@ class FusionSolarAPI:
                         elif 'csrfToken' in data:
                             self.csrf = data['csrfToken']
                             self.csrf_time = datetime.now()
-                            _LOGGER.debug(f"CSRF refreshed: {self.csrf}")
+                            _LOGGER.info("CSRF refreshed successfully: %s", self.csrf)
                             return
                 except Exception as e:
                     _LOGGER.debug("CSRF endpoint %s failed: %s", endpoint, e)
@@ -733,9 +737,13 @@ class FusionSolarAPI:
             
             # Calculate real-time energy using day interval data (5-minute intervals)
             try:
+                _LOGGER.info("Attempting to get day interval data for real-time energy calculation")
                 day_data = self.call_energy_balance(ENERGY_BALANCE_CALL_TYPE.DAY)
+                _LOGGER.info("Day data received: success=%s, has_data=%s", day_data.get("success"), "data" in day_data)
+                
                 if day_data.get("success") and "data" in day_data:
                     day_info = day_data["data"]
+                    _LOGGER.info("Day info keys available: %s", list(day_info.keys()) if isinstance(day_info, dict) else "Not a dict")
                     
                     # Get current time index (5-minute intervals: 288 points per day)
                     current_time = datetime.now()
@@ -749,20 +757,24 @@ class FusionSolarAPI:
                     # Extract energy values from day interval data
                     if "productPower" in day_info and len(day_info["productPower"]) > interval_index:
                         product_power_list = day_info["productPower"]
+                        _LOGGER.info("Processing Solar Production - interval_index=%s, list_length=%s", interval_index, len(product_power_list))
                         # Sum up energy from midnight to current interval
                         total_energy = 0.0
                         for i in range(interval_index + 1):
                             if i < len(product_power_list) and product_power_list[i] not in ["--", "null", ""]:
                                 total_energy += extract_numeric(product_power_list[i])
                         output["Solar Production Energy (Real-time)"] = total_energy
+                        _LOGGER.info("Solar Production Energy (Real-time) calculated: %s", total_energy)
                     
                     if "buyPower" in day_info and len(day_info["buyPower"]) > interval_index:
                         buy_power_list = day_info["buyPower"]
+                        _LOGGER.info("Processing Grid Consumption - interval_index=%s, list_length=%s", interval_index, len(buy_power_list))
                         total_energy = 0.0
                         for i in range(interval_index + 1):
                             if i < len(buy_power_list) and buy_power_list[i] not in ["--", "null", ""]:
                                 total_energy += extract_numeric(buy_power_list[i])
                         output["Grid Consumption Energy (Real-time)"] = total_energy
+                        _LOGGER.info("Grid Consumption Energy (Real-time) calculated: %s", total_energy)
                     
                     if "onGridPower" in day_info and len(day_info["onGridPower"]) > interval_index:
                         ongrid_power_list = day_info["onGridPower"]
@@ -803,6 +815,10 @@ class FusionSolarAPI:
                     output["Battery Injection Energy (Real-time)"] = self.battery_injection_integrator.update(output["battery_injection_power"], current_time)
             except Exception as e:
                 _LOGGER.error("Error getting day interval data: %s", e)
+                _LOGGER.error("Exception type: %s", type(e).__name__)
+                _LOGGER.error("Exception details: %s", str(e))
+                import traceback
+                _LOGGER.error("Full traceback: %s", traceback.format_exc())
                 # Fallback to power integration
                 current_time = datetime.now()
                 output["Solar Production Energy (Real-time)"] = self.solar_integrator.update(output["panel_production_power"], current_time)
@@ -1074,6 +1090,10 @@ class FusionSolarAPI:
         
         
     def call_energy_balance(self, call_type: ENERGY_BALANCE_CALL_TYPE, specific_date: datetime = None):
+        _LOGGER.info("Energy Balance API Call - Type: %s, Data Host: %s, Station: %s", call_type, self.data_host, self.station)
+        _LOGGER.info("Session Status - Connected: %s, Cookie Name: %s, CSRF: %s", self.connected, self.session_cookie_name, self.csrf)
+        _LOGGER.info("Session Cookies: %s", dict(self.session.cookies))
+        
         currentTime = datetime.now()
         timestampNow = currentTime.timestamp() * 1000
         current_day = currentTime.day
@@ -1133,9 +1153,14 @@ class FusionSolarAPI:
         }
          
         energy_balance_url = f"https://{self.data_host}/rest/pvms/web/station/v1/overview/energy-balance?{urlencode(params)}"
-        _LOGGER.debug("Getting Energy Balance at: %s", energy_balance_url)
+        _LOGGER.info("Energy Balance Request URL: %s", energy_balance_url)
+        _LOGGER.info("Energy Balance Request Headers: %s", headers)
+        _LOGGER.info("Energy Balance Request Params: %s", params)
+        
         energy_balance_response = self.session.get(energy_balance_url, headers=headers)
-        _LOGGER.debug("Energy Balance Response: %s", energy_balance_response.text)
+        _LOGGER.info("Energy Balance Response Status: %s", energy_balance_response.status_code)
+        _LOGGER.info("Energy Balance Response Headers: %s", dict(energy_balance_response.headers))
+        _LOGGER.info("Energy Balance Response Text (first 500 chars): %s", energy_balance_response.text[:500])
         try:
             energy_balance_data = energy_balance_response.json()
         except Exception as ex:
