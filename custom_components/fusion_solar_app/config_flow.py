@@ -1,5 +1,8 @@
 """Config flow for Fusion Solar App Integration."""
 
+# Version check for debugging
+DEBUG_VERSION = "v1.3.11-form-debug"
+
 from __future__ import annotations
 
 import logging
@@ -26,6 +29,7 @@ from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, MIN_SCAN_INTERVAL, FUSION_SOLA
 
 
 _LOGGER = logging.getLogger(__name__)
+_LOGGER.error("CAPTCHA Debug - Config flow loaded with version: %s", DEBUG_VERSION)
 
 # TODO adjust the data schema to the data that you need
 STEP_USER_DATA_SCHEMA = vol.Schema(
@@ -160,17 +164,17 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
         )
     
     async def async_step_captcha(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        _LOGGER.info("CAPTCHA Debug - async_step_captcha called with user_input: %s", user_input)
+        _LOGGER.error("CAPTCHA Debug - async_step_captcha called with user_input: %s", user_input)
         errors: dict[str, str] = {}
         
         # Get the original user data from the flow context
         original_data = self._input_data if hasattr(self, '_input_data') else user_input
-        _LOGGER.info("CAPTCHA Debug - Original data: %s", original_data)
+        _LOGGER.error("CAPTCHA Debug - Original data: %s", original_data)
         
         if user_input is not None:
-            _LOGGER.info("CAPTCHA Debug - Raw user_input keys: %s", list(user_input.keys()))
-            _LOGGER.info("CAPTCHA Debug - Raw user_input values: %s", user_input)
-            _LOGGER.info("CAPTCHA Debug - CAPTCHA_INPUT constant: '%s'", CAPTCHA_INPUT)
+            _LOGGER.error("CAPTCHA Debug - Raw user_input keys: %s", list(user_input.keys()))
+            _LOGGER.error("CAPTCHA Debug - Raw user_input values: %s", user_input)
+            _LOGGER.error("CAPTCHA Debug - CAPTCHA_INPUT constant: '%s'", CAPTCHA_INPUT)
             
             # Try different possible field names
             captcha_response = user_input.get(CAPTCHA_INPUT, "").strip()
@@ -189,7 +193,7 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                         _LOGGER.info("CAPTCHA Debug - Found potential captcha field '%s': '%s'", key, captcha_response)
                         break
             
-            _LOGGER.info("CAPTCHA Debug - Final extracted captcha_response: '%s'", captcha_response)
+            _LOGGER.error("CAPTCHA Debug - Final extracted captcha_response: '%s'", captcha_response)
     
             if not captcha_response:
                 _LOGGER.warning("No Captcha code filled.")
