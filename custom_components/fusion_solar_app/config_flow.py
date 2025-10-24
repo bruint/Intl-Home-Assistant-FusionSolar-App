@@ -95,6 +95,7 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_auth"
             except InvalidCaptcha:
                 _LOGGER.exception("Captcha failed, redirecting to Captcha screen")
+                self._input_data = user_input  # Store the original user data
                 return await self.async_step_captcha(user_input)
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception")
@@ -134,6 +135,7 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_auth"
             except InvalidCaptcha:
                 _LOGGER.exception("Captcha failed, redirecting to Captcha screen")
+                self._input_data = user_input  # Store the original user data
                 return await self.async_step_captcha(user_input)
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception")
@@ -159,22 +161,46 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
     
     async def async_step_captcha(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
-    
-        api = FusionSolarAPI(user_input[CONF_USERNAME], user_input[CONF_PASSWORD], user_input[FUSION_SOLAR_HOST], user_input.get(CAPTCHA_INPUT, None))
-        _LOGGER.debug("Obtaining Captcha image...")
-        await self.hass.async_add_executor_job(api.set_captcha_img)
-        captcha_img = api.captcha_img
-        _LOGGER.debug("Got most recent Captcha image...")
-
+        
+        # Get the original user data from the flow context
+        original_data = self._input_data if hasattr(self, '_input_data') else user_input
+        
         if user_input is not None:
             captcha_response = user_input.get(CAPTCHA_INPUT)
     
             if not captcha_response:
-                _LOGGER.warning("No  Captcha code filled.")
+                _LOGGER.warning("No Captcha code filled.")
                 errors["base"] = "captcha_required"
             else:
-                _LOGGER.debug("Validating Login with Captcha...")
-                return await self.async_step_user(user_input)
+                _LOGGER.debug("Validating Login with Captcha: %s", captcha_response)
+                # Create API with the CAPTCHA input
+                api = FusionSolarAPI(original_data[CONF_USERNAME], original_data[CONF_PASSWORD], original_data[FUSION_SOLAR_HOST], captcha_response)
+                try:
+                    await self.hass.async_add_executor_job(api.login)
+                    # If login successful, create the config entry
+                    info = {"title": f"Fusion Solar App Integration"}
+                    await self.async_set_unique_id(info.get("title"))
+                    self._abort_if_unique_id_configured()
+                    return self.async_create_entry(title=info["title"], data=original_data)
+                except APIAuthError as err:
+                    _LOGGER.error("Login failed with CAPTCHA: %s", err)
+                    errors["base"] = "invalid_auth"
+                except APIAuthCaptchaError as err:
+                    _LOGGER.error("CAPTCHA still required: %s", err)
+                    errors["base"] = "captcha_required"
+                except APIConnectionError as err:
+                    _LOGGER.error("Connection error: %s", err)
+                    errors["base"] = "cannot_connect"
+                except Exception as err:
+                    _LOGGER.exception("Unexpected exception: %s", err)
+                    errors["base"] = "unknown"
+        
+        # Get CAPTCHA image for display
+        api = FusionSolarAPI(original_data[CONF_USERNAME], original_data[CONF_PASSWORD], original_data[FUSION_SOLAR_HOST], None)
+        _LOGGER.debug("Obtaining Captcha image...")
+        await self.hass.async_add_executor_job(api.set_captcha_img)
+        captcha_img = api.captcha_img
+        _LOGGER.debug("Got most recent Captcha image...")
     
         return self.async_show_form(
             step_id="captcha",
