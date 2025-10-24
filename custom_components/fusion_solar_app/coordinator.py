@@ -40,7 +40,7 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
         self.user = config_entry.data[CONF_USERNAME]
         self.pwd = config_entry.data[CONF_PASSWORD]
         self.login_host = config_entry.data[FUSION_SOLAR_HOST]
-        self.captcha_input = config_entry.data.get("CAPTCHA_INPUT", None)
+        self.captcha_input = config_entry.data.get(CAPTCHA_INPUT, None)
 
         # set variables from options.  You need a default here incase options have not been set
         self.poll_interval = config_entry.options.get(
