@@ -6,10 +6,10 @@
       "reconfigure_successful": "Reconfiguration successful"
     },
     "error": {
-      "cannot_connect": "Failed to connect",
-      "invalid_auth": "Invalid authentication",
-      "unknown": "Unexpected error",
-      "captcha_required": "Captcha required"
+      "cannot_connect": "Cannot connect to FusionSolar server. Check your internet connection and host URL.",
+      "invalid_auth": "Invalid authentication. Check your username and password.",
+      "unknown": "Unexpected error occurred. Check the logs for details.",
+      "captcha_required": "Please enter the CAPTCHA code shown in the image above."
     },
     "step": {
       "user": {

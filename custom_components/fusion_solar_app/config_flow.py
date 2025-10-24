@@ -166,13 +166,13 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
         original_data = self._input_data if hasattr(self, '_input_data') else user_input
         
         if user_input is not None:
-            captcha_response = user_input.get(CAPTCHA_INPUT)
+            captcha_response = user_input.get(CAPTCHA_INPUT, "").strip()
     
             if not captcha_response:
                 _LOGGER.warning("No Captcha code filled.")
                 errors["base"] = "captcha_required"
             else:
-                _LOGGER.debug("Validating Login with Captcha: %s", captcha_response)
+                _LOGGER.debug("Validating Login with CAPTCHA: %s", captcha_response)
                 # Create API with the CAPTCHA input
                 api = FusionSolarAPI(original_data[CONF_USERNAME], original_data[CONF_PASSWORD], original_data[FUSION_SOLAR_HOST], captcha_response)
                 try:
@@ -193,15 +193,28 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                     errors["base"] = "cannot_connect"
                 except Exception as err:
                     _LOGGER.exception("Unexpected exception: %s", err)
-                    errors["base"] = "unknown"
+                    # Check if it's a network connectivity issue
+                    if "Network unreachable" in str(err) or "Connection refused" in str(err):
+                        errors["base"] = "cannot_connect"
+                    else:
+                        errors["base"] = "unknown"
         
         # Get CAPTCHA image for display (only if no user input yet or if there are errors)
         if user_input is None or errors:
-            api = FusionSolarAPI(original_data[CONF_USERNAME], original_data[CONF_PASSWORD], original_data[FUSION_SOLAR_HOST], None)
-            _LOGGER.debug("Obtaining Captcha image...")
-            await self.hass.async_add_executor_job(api.set_captcha_img)
-            captcha_img = api.captcha_img
-            _LOGGER.debug("Got most recent Captcha image...")
+            try:
+                api = FusionSolarAPI(original_data[CONF_USERNAME], original_data[CONF_PASSWORD], original_data[FUSION_SOLAR_HOST], None)
+                _LOGGER.debug("Obtaining Captcha image...")
+                await self.hass.async_add_executor_job(api.set_captcha_img)
+                captcha_img = api.captcha_img
+                _LOGGER.debug("Got most recent Captcha image...")
+            except Exception as err:
+                _LOGGER.error("Failed to get CAPTCHA image: %s", err)
+                captcha_img = ""
+                if not errors:  # Only add error if there wasn't already an error
+                    if "Network unreachable" in str(err) or "Connection refused" in str(err):
+                        errors["base"] = "cannot_connect"
+                    else:
+                        errors["base"] = "unknown"
         else:
             # If no errors, we shouldn't reach here, but just in case
             captcha_img = ""
