@@ -330,9 +330,15 @@ class FusionSolarAPI:
                     self.refresh_csrf()
                     
                     station_data = self.get_station_list()
-                    self.station = station_data["data"]["list"][0]["dn"]
-                    if self.battery_capacity is None or self.battery_capacity == 0.0:
-                        self.battery_capacity = station_data["data"]["list"][0]["batteryCapacity"]
+                    if station_data and "data" in station_data and "list" in station_data["data"] and len(station_data["data"]["list"]) > 0:
+                        self.station = station_data["data"]["list"][0]["dn"]
+                        if self.battery_capacity is None or self.battery_capacity == 0.0:
+                            self.battery_capacity = station_data["data"]["list"][0]["batteryCapacity"]
+                        _LOGGER.info("Station set to: %s", self.station)
+                    else:
+                        _LOGGER.error("Failed to get station data from API response: %s", station_data)
+                        self.connected = False
+                        raise APIAuthError("Failed to get station data")
                     self._start_session_monitor()
                     return True
                 else:
@@ -610,6 +616,10 @@ class FusionSolarAPI:
         }
         
         # Fusion Solar App Station parameter
+        if self.station is None:
+            _LOGGER.error("Station not set. Cannot get devices without station information.")
+            return []
+        
         params = {"stationDn": unquote(self.station)}
         
         data_access_url = f"https://{self.data_host}/rest/pvms/web/station/v1/overview/energy-flow"
