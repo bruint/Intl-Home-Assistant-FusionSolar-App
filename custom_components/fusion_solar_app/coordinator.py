@@ -73,19 +73,7 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
                 self.api.session.cookies.set(name, value)
             # Mark as connected since we have a valid session
             self.api.connected = True
-            
-            # Try to get station data since we have a valid session
-            try:
-                station_data = await self.hass.async_add_executor_job(self.api.get_station_list)
-                if station_data and "data" in station_data and "list" in station_data["data"] and len(station_data["data"]["list"]) > 0:
-                    self.api.station = station_data["data"]["list"][0]["dn"]
-                    if self.api.battery_capacity is None or self.api.battery_capacity == 0.0:
-                        self.api.battery_capacity = station_data["data"]["list"][0]["batteryCapacity"]
-                    _LOGGER.info("Station restored from session: %s", self.api.station)
-                else:
-                    _LOGGER.warning("Could not retrieve station data from restored session")
-            except Exception as e:
-                _LOGGER.warning("Failed to retrieve station data from restored session: %s", e)
+            # Note: Station data will be retrieved in first async_update_data call
 
     async def async_update_data(self):
         """Fetch data from API endpoint.
@@ -96,6 +84,21 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
         try:
             if not self.api.connected:
                 await self.hass.async_add_executor_job(self.api.login)
+            
+            # If we have a session but no station data, retrieve it now
+            if self.api.connected and self.api.station is None:
+                try:
+                    station_data = await self.hass.async_add_executor_job(self.api.get_station_list)
+                    if station_data and "data" in station_data and "list" in station_data["data"] and len(station_data["data"]["list"]) > 0:
+                        self.api.station = station_data["data"]["list"][0]["dn"]
+                        if self.api.battery_capacity is None or self.api.battery_capacity == 0.0:
+                            self.api.battery_capacity = station_data["data"]["list"][0]["batteryCapacity"]
+                        _LOGGER.info("Station retrieved from session: %s", self.api.station)
+                    else:
+                        _LOGGER.warning("Could not retrieve station data from session")
+                except Exception as e:
+                    _LOGGER.warning("Failed to retrieve station data from session: %s", e)
+            
             devices = await self.hass.async_add_executor_job(self.api.get_devices)
         except APIAuthCaptchaError as err:
             _LOGGER.warning("CAPTCHA required for API access. Session may have expired.")
