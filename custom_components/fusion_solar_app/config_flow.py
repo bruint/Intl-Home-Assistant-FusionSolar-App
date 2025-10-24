@@ -26,22 +26,24 @@ from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, MIN_SCAN_INTERVAL, FUSION_SOLA
 
 
 _LOGGER = logging.getLogger(__name__)
-_LOGGER.error("CAPTCHA Debug - Config flow loaded with version: %s", "v1.3.13-two-step-captcha")
 
-# TODO adjust the data schema to the data that you need
-STEP_USER_DATA_SCHEMA = vol.Schema(
+# Step 1: Domain only
+STEP_DOMAIN_DATA_SCHEMA = vol.Schema(
+    {
+        vol.Required(FUSION_SOLAR_HOST, description={"suggested_value": "sg5.fusionsolar.huawei.com"}): str
+    }
+)
+
+# Step 2: Credentials and CAPTCHA
+STEP_CREDENTIALS_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_USERNAME, description={"suggested_value": ""}): str,
         vol.Required(CONF_PASSWORD, description={"suggested_value": ""}): str,
-        vol.Required(FUSION_SOLAR_HOST, description={"suggested_value": "eu5.fusionsolar.huawei.com"}): str
-    }
-)
-
-STEP_CAPTCHA_DATA_SCHEMA = vol.Schema(
-    {
         vol.Required(CAPTCHA_INPUT): str,
     }
 )
+
+# STEP_CAPTCHA_DATA_SCHEMA removed - CAPTCHA now integrated into credentials step
 
 
 # validate_input function removed - validation now done directly in async_step_user
@@ -69,41 +71,90 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Handle the initial step."""
-        # Called when you initiate adding an integration via the UI
+        """Handle the initial step - collect domain only."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            # The form has been filled in and submitted, so process the data provided.
+            # Store the domain and move to credentials step
+            self._input_data = user_input
+            _LOGGER.error("CAPTCHA Debug - Domain collected: %s", user_input[FUSION_SOLAR_HOST])
+            return await self.async_step_credentials()
+
+        # Show domain form
+        return self.async_show_form(
+            step_id="user", 
+            data_schema=STEP_DOMAIN_DATA_SCHEMA, 
+            errors=errors
+        )
+
+    async def async_step_credentials(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle the credentials step - username, password, and CAPTCHA."""
+        errors: dict[str, str] = {}
+        
+        # Get the domain from the previous step
+        domain_data = self._input_data if hasattr(self, '_input_data') else {}
+        domain = domain_data.get(FUSION_SOLAR_HOST, "")
+        
+        if user_input is not None:
+            _LOGGER.error("CAPTCHA Debug - Credentials step called with user_input: %s", user_input)
+            
+            # Combine domain and credentials
+            full_data = {**domain_data, **user_input}
+            
             try:
-                # First, try to get the domain and check if CAPTCHA is required
-                api = FusionSolarAPI(user_input[CONF_USERNAME], user_input[CONF_PASSWORD], user_input[FUSION_SOLAR_HOST], None)
+                # Try to login with the provided credentials and CAPTCHA
+                api = FusionSolarAPI(
+                    user_input[CONF_USERNAME], 
+                    user_input[CONF_PASSWORD], 
+                    domain, 
+                    user_input.get(CAPTCHA_INPUT, "")
+                )
                 
-                # Check if CAPTCHA is required by attempting a login
-                _LOGGER.error("CAPTCHA Debug - Checking if CAPTCHA is required for domain: %s", user_input[FUSION_SOLAR_HOST])
+                _LOGGER.error("CAPTCHA Debug - Attempting login with domain: %s, username: %s", domain, user_input[CONF_USERNAME])
                 await self.hass.async_add_executor_job(api.login)
                 
-                # If we get here, login was successful without CAPTCHA
+                # If we get here, login was successful
                 info = {"title": f"Fusion Solar App Integration"}
                 await self.async_set_unique_id(info.get("title"))
                 self._abort_if_unique_id_configured()
-                return self.async_create_entry(title=info["title"], data=user_input)
+                return self.async_create_entry(title=info["title"], data=full_data)
                 
             except APIAuthCaptchaError:
-                _LOGGER.error("CAPTCHA Debug - CAPTCHA required, redirecting to CAPTCHA step")
-                self._input_data = user_input  # Store the original user data
-                return await self.async_step_captcha(user_input)
-            except CannotConnect:
-                errors["base"] = "cannot_connect"
-            except InvalidAuth:
+                _LOGGER.error("CAPTCHA Debug - CAPTCHA still required")
+                errors["base"] = "captcha_required"
+            except APIAuthError:
+                _LOGGER.error("CAPTCHA Debug - Invalid credentials")
                 errors["base"] = "invalid_auth"
-            except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Unexpected exception")
+            except APIConnectionError:
+                _LOGGER.error("CAPTCHA Debug - Connection error")
+                errors["base"] = "cannot_connect"
+            except Exception as e:
+                _LOGGER.error("CAPTCHA Debug - Unexpected error: %s", e)
                 errors["base"] = "unknown"
-
-        # Show initial form.
+        
+        # Get CAPTCHA image for display
+        captcha_img = ""
+        try:
+            api = FusionSolarAPI("", "", domain, None)
+            _LOGGER.error("CAPTCHA Debug - Getting CAPTCHA image for domain: %s", domain)
+            await self.hass.async_add_executor_job(api.set_captcha_img)
+            captcha_img = api.captcha_img
+            _LOGGER.error("CAPTCHA Debug - CAPTCHA image obtained: %s", "SUCCESS" if captcha_img else "FAILED")
+        except Exception as err:
+            _LOGGER.error("CAPTCHA Debug - Failed to get CAPTCHA image: %s", err)
+            captcha_img = ""
+        
+        # Show credentials form with CAPTCHA
         return self.async_show_form(
-            step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
+            step_id="credentials",
+            data_schema=STEP_CREDENTIALS_DATA_SCHEMA,
+            description_placeholders={
+                "captcha_img": '<img id="fusion_solar_app_security_captcha" src="' + captcha_img + '"/>' if captcha_img else '<p><strong>CAPTCHA Image Failed to Load</strong><br/>Please try refreshing the page or check your network connection.</p>',
+                "domain": domain
+            },
+            errors=errors,
         )
 
     async def async_step_reconfigure(
@@ -127,9 +178,9 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
             except InvalidAuth:
                 errors["base"] = "invalid_auth"
             except InvalidCaptcha:
-                _LOGGER.exception("Captcha failed, redirecting to Captcha screen")
+                _LOGGER.exception("Captcha failed, redirecting to Credentials screen")
                 self._input_data = user_input  # Store the original user data
-                return await self.async_step_captcha(user_input)
+                return await self.async_step_credentials()
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
@@ -149,120 +200,6 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                     vol.Required(FUSION_SOLAR_HOST, default=config_entry.data[FUSION_SOLAR_HOST]): str,
                 }
             ),
-            errors=errors,
-        )
-    
-    async def async_step_captcha(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        _LOGGER.error("CAPTCHA Debug - async_step_captcha called with user_input: %s", user_input)
-        errors: dict[str, str] = {}
-        
-        # Get the original user data from the flow context
-        original_data = self._input_data if hasattr(self, '_input_data') else user_input
-        _LOGGER.error("CAPTCHA Debug - Original data: %s", original_data)
-        
-        if user_input is not None:
-            _LOGGER.error("CAPTCHA Debug - Raw user_input keys: %s", list(user_input.keys()))
-            _LOGGER.error("CAPTCHA Debug - Raw user_input values: %s", user_input)
-            _LOGGER.error("CAPTCHA Debug - CAPTCHA_INPUT constant: '%s'", CAPTCHA_INPUT)
-            
-            # Try different possible field names
-            captcha_response = user_input.get(CAPTCHA_INPUT, "").strip()
-            if not captcha_response:
-                # Try alternative field names
-                captcha_response = user_input.get("captcha", "").strip()
-                _LOGGER.info("CAPTCHA Debug - Tried 'captcha' field: '%s'", captcha_response)
-            if not captcha_response:
-                captcha_response = user_input.get("verifycode", "").strip()
-                _LOGGER.info("CAPTCHA Debug - Tried 'verifycode' field: '%s'", captcha_response)
-            if not captcha_response:
-                # Try any field that might contain captcha
-                for key, value in user_input.items():
-                    if "captcha" in key.lower() or "verify" in key.lower():
-                        captcha_response = str(value).strip()
-                        _LOGGER.info("CAPTCHA Debug - Found potential captcha field '%s': '%s'", key, captcha_response)
-                        break
-            
-            _LOGGER.error("CAPTCHA Debug - Final extracted captcha_response: '%s'", captcha_response)
-    
-            if not captcha_response:
-                _LOGGER.warning("No Captcha code filled.")
-                errors["base"] = "captcha_required"
-            else:
-                _LOGGER.debug("Validating Login with CAPTCHA: %s", captcha_response)
-                _LOGGER.info("CAPTCHA Debug - Input: '%s', Length: %d", captcha_response, len(captcha_response))
-                # Create API with the CAPTCHA input
-                api = FusionSolarAPI(original_data[CONF_USERNAME], original_data[CONF_PASSWORD], original_data[FUSION_SOLAR_HOST], captcha_response)
-                _LOGGER.info("CAPTCHA Debug - API created with captcha_input: '%s'", api.captcha_input)
-                try:
-                    _LOGGER.info("CAPTCHA Debug - Attempting login with CAPTCHA: %s", captcha_response)
-                    await self.hass.async_add_executor_job(api.login)
-                    _LOGGER.info("CAPTCHA Debug - Login successful!")
-                    # If login successful, create the config entry
-                    info = {"title": f"Fusion Solar App Integration"}
-                    await self.async_set_unique_id(info.get("title"))
-                    self._abort_if_unique_id_configured()
-                    return self.async_create_entry(title=info["title"], data=original_data)
-                except APIAuthError as err:
-                    _LOGGER.error("Login failed with CAPTCHA: %s", err)
-                    _LOGGER.info("CAPTCHA Debug - Auth error with CAPTCHA: %s", captcha_response)
-                    errors["base"] = "invalid_auth"
-                except APIAuthCaptchaError as err:
-                    _LOGGER.error("CAPTCHA still required: %s", err)
-                    _LOGGER.info("CAPTCHA Debug - CAPTCHA error with input: %s", captcha_response)
-                    errors["base"] = "captcha_required"
-                except APIConnectionError as err:
-                    _LOGGER.error("Connection error: %s", err)
-                    errors["base"] = "cannot_connect"
-                except Exception as err:
-                    _LOGGER.exception("Unexpected exception: %s", err)
-                    # Check if it's a network connectivity issue
-                    if "Network unreachable" in str(err) or "Connection refused" in str(err):
-                        errors["base"] = "cannot_connect"
-                    else:
-                        errors["base"] = "unknown"
-        
-            # Get CAPTCHA image for display (only if no user input yet or if there are errors)
-            if user_input is None or errors:
-                try:
-                    # Create API instance and get CAPTCHA image in the same session
-                    api = FusionSolarAPI(original_data[CONF_USERNAME], original_data[CONF_PASSWORD], original_data[FUSION_SOLAR_HOST], None)
-                    _LOGGER.error("CAPTCHA Debug - Obtaining Captcha image for domain: %s", original_data[FUSION_SOLAR_HOST])
-                    await self.hass.async_add_executor_job(api.set_captcha_img)
-                    captcha_img = api.captcha_img
-                    _LOGGER.error("CAPTCHA Debug - Captcha image obtained: %s", "SUCCESS" if captcha_img else "FAILED")
-                    if captcha_img:
-                        _LOGGER.error("CAPTCHA Debug - Image length: %d characters", len(captcha_img))
-                    else:
-                        _LOGGER.error("CAPTCHA Debug - No captcha image available")
-                except Exception as err:
-                    _LOGGER.error("Failed to get CAPTCHA image: %s", err)
-                    captcha_img = ""
-                    if not errors:  # Only add error if there wasn't already an error
-                        if "Network unreachable" in str(err) or "Connection refused" in str(err):
-                            errors["base"] = "cannot_connect"
-                        else:
-                            errors["base"] = "unknown"
-            else:
-                # If no errors, we shouldn't reach here, but just in case
-                captcha_img = ""
-    
-        # Create the form schema
-        form_schema = vol.Schema(
-            {
-                vol.Required(CONF_USERNAME, default=original_data[CONF_USERNAME]): str,
-                vol.Required(CONF_PASSWORD, default=original_data[CONF_PASSWORD]): str,
-                vol.Required(FUSION_SOLAR_HOST, default=original_data[FUSION_SOLAR_HOST]): str,
-                vol.Required(CAPTCHA_INPUT): str,
-            }
-        )
-        
-        _LOGGER.info("CAPTCHA Debug - Form schema fields: %s", list(form_schema.schema.keys()))
-        _LOGGER.info("CAPTCHA Debug - CAPTCHA_INPUT in schema: %s", CAPTCHA_INPUT in form_schema.schema)
-        
-        return self.async_show_form(
-            step_id="captcha",
-            data_schema=form_schema,
-            description_placeholders={"captcha_img": '<img id="fusion_solar_app_security_captcha" src="' + captcha_img + '"/>' if captcha_img else '<p><strong>CAPTCHA Image Failed to Load</strong><br/>Please try refreshing the page or check your network connection.</p>'},
             errors=errors,
         )
 
