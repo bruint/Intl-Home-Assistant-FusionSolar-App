@@ -230,6 +230,9 @@ class FusionSolarAPI:
         _LOGGER.debug("captcha_input=%s", self.captcha_input)
         if self.captcha_input is not None and self.captcha_input != '':
             payload["verifycode"] = self.captcha_input
+            _LOGGER.info("CAPTCHA Debug - Added verifycode to payload: %s", self.captcha_input)
+        
+        _LOGGER.info("CAPTCHA Debug - Final payload: %s", payload)
         
         headers = {
             "Content-Type": "application/json",
@@ -272,6 +275,16 @@ class FusionSolarAPI:
                     
                     if error_code == '411':
                         _LOGGER.warning("Captcha required.")
+                        _LOGGER.info("CAPTCHA Debug - Manual input provided: '%s'", self.captcha_input)
+                        
+                        # If manual CAPTCHA input was provided, retry login with it
+                        if self.captcha_input and self.captcha_input.strip():
+                            _LOGGER.info("CAPTCHA Debug - Manual input provided, retrying login with: %s", self.captcha_input)
+                            # The CAPTCHA input is already in the payload, so just raise the error
+                            # The config flow will handle retrying with the same CAPTCHA
+                            raise APIAuthCaptchaError("Login requires Captcha.")
+                        
+                        # Only try automatic solving if no manual input was provided
                         if self.captcha_solver is not None:
                             _LOGGER.info("Attempting automatic CAPTCHA solving...")
                             try:

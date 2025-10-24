@@ -173,10 +173,13 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "captcha_required"
             else:
                 _LOGGER.debug("Validating Login with CAPTCHA: %s", captcha_response)
+                _LOGGER.info("CAPTCHA Debug - Input: '%s', Length: %d", captcha_response, len(captcha_response))
                 # Create API with the CAPTCHA input
                 api = FusionSolarAPI(original_data[CONF_USERNAME], original_data[CONF_PASSWORD], original_data[FUSION_SOLAR_HOST], captcha_response)
                 try:
+                    _LOGGER.info("CAPTCHA Debug - Attempting login with CAPTCHA: %s", captcha_response)
                     await self.hass.async_add_executor_job(api.login)
+                    _LOGGER.info("CAPTCHA Debug - Login successful!")
                     # If login successful, create the config entry
                     info = {"title": f"Fusion Solar App Integration"}
                     await self.async_set_unique_id(info.get("title"))
@@ -184,9 +187,11 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                     return self.async_create_entry(title=info["title"], data=original_data)
                 except APIAuthError as err:
                     _LOGGER.error("Login failed with CAPTCHA: %s", err)
+                    _LOGGER.info("CAPTCHA Debug - Auth error with CAPTCHA: %s", captcha_response)
                     errors["base"] = "invalid_auth"
                 except APIAuthCaptchaError as err:
                     _LOGGER.error("CAPTCHA still required: %s", err)
+                    _LOGGER.info("CAPTCHA Debug - CAPTCHA error with input: %s", captcha_response)
                     errors["base"] = "captcha_required"
                 except APIConnectionError as err:
                     _LOGGER.error("Connection error: %s", err)
