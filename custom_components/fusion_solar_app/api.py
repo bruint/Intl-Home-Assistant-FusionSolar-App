@@ -697,13 +697,85 @@ class FusionSolarAPI:
             self.update_output_with_battery_capacity(output)
             self.update_output_with_energy_balance(output)
             
-            # Calculate real-time energy using power integration
-            current_time = datetime.now()
-            output["Solar Production Energy (Real-time)"] = self.solar_integrator.update(output["panel_production_power"], current_time)
-            output["Grid Consumption Energy (Real-time)"] = self.grid_consumption_integrator.update(output["grid_consumption_power"], current_time)
-            output["Grid Injection Energy (Real-time)"] = self.grid_injection_integrator.update(output["grid_injection_power"], current_time)
-            output["Battery Consumption Energy (Real-time)"] = self.battery_consumption_integrator.update(output["battery_consumption_power"], current_time)
-            output["Battery Injection Energy (Real-time)"] = self.battery_injection_integrator.update(output["battery_injection_power"], current_time)
+            # Calculate real-time energy using day interval data (5-minute intervals)
+            try:
+                day_data = self.call_energy_balance(ENERGY_BALANCE_CALL_TYPE.DAY)
+                if day_data.get("success") and "data" in day_data:
+                    day_info = day_data["data"]
+                    
+                    # Get current time index (5-minute intervals: 288 points per day)
+                    current_time = datetime.now()
+                    minutes_since_midnight = current_time.hour * 60 + current_time.minute
+                    interval_index = minutes_since_midnight // 5  # 5-minute intervals
+                    
+                    # Ensure index is within bounds
+                    if interval_index >= 288:
+                        interval_index = 287  # Last interval of the day
+                    
+                    # Extract energy values from day interval data
+                    if "productPower" in day_info and len(day_info["productPower"]) > interval_index:
+                        product_power_list = day_info["productPower"]
+                        # Sum up energy from midnight to current interval
+                        total_energy = 0.0
+                        for i in range(interval_index + 1):
+                            if i < len(product_power_list) and product_power_list[i] not in ["--", "null", ""]:
+                                total_energy += extract_numeric(product_power_list[i])
+                        output["Solar Production Energy (Real-time)"] = total_energy
+                    
+                    if "buyPower" in day_info and len(day_info["buyPower"]) > interval_index:
+                        buy_power_list = day_info["buyPower"]
+                        total_energy = 0.0
+                        for i in range(interval_index + 1):
+                            if i < len(buy_power_list) and buy_power_list[i] not in ["--", "null", ""]:
+                                total_energy += extract_numeric(buy_power_list[i])
+                        output["Grid Consumption Energy (Real-time)"] = total_energy
+                    
+                    if "onGridPower" in day_info and len(day_info["onGridPower"]) > interval_index:
+                        ongrid_power_list = day_info["onGridPower"]
+                        total_energy = 0.0
+                        for i in range(interval_index + 1):
+                            if i < len(ongrid_power_list) and ongrid_power_list[i] not in ["--", "null", ""]:
+                                total_energy += extract_numeric(ongrid_power_list[i])
+                        output["Grid Injection Energy (Real-time)"] = total_energy
+                    
+                    if "selfUsePower" in day_info and len(day_info["selfUsePower"]) > interval_index:
+                        selfuse_power_list = day_info["selfUsePower"]
+                        total_energy = 0.0
+                        for i in range(interval_index + 1):
+                            if i < len(selfuse_power_list) and selfuse_power_list[i] not in ["--", "null", ""]:
+                                total_energy += extract_numeric(selfuse_power_list[i])
+                        output["Battery Consumption Energy (Real-time)"] = total_energy
+                    
+                    if "chargePower" in day_info and len(day_info["chargePower"]) > interval_index:
+                        charge_power_list = day_info["chargePower"]
+                        total_energy = 0.0
+                        for i in range(interval_index + 1):
+                            if i < len(charge_power_list) and charge_power_list[i] not in ["--", "null", ""]:
+                                total_energy += extract_numeric(charge_power_list[i])
+                        output["Battery Injection Energy (Real-time)"] = total_energy
+                    
+                    _LOGGER.debug("Real-time energy from day intervals: solar=%s, grid_cons=%s, grid_inj=%s", 
+                                 output["Solar Production Energy (Real-time)"],
+                                 output["Grid Consumption Energy (Real-time)"],
+                                 output["Grid Injection Energy (Real-time)"])
+                else:
+                    _LOGGER.warning("Day interval data not available, using power integration fallback")
+                    # Fallback to power integration if day data fails
+                    current_time = datetime.now()
+                    output["Solar Production Energy (Real-time)"] = self.solar_integrator.update(output["panel_production_power"], current_time)
+                    output["Grid Consumption Energy (Real-time)"] = self.grid_consumption_integrator.update(output["grid_consumption_power"], current_time)
+                    output["Grid Injection Energy (Real-time)"] = self.grid_injection_integrator.update(output["grid_injection_power"], current_time)
+                    output["Battery Consumption Energy (Real-time)"] = self.battery_consumption_integrator.update(output["battery_consumption_power"], current_time)
+                    output["Battery Injection Energy (Real-time)"] = self.battery_injection_integrator.update(output["battery_injection_power"], current_time)
+            except Exception as e:
+                _LOGGER.error("Error getting day interval data: %s", e)
+                # Fallback to power integration
+                current_time = datetime.now()
+                output["Solar Production Energy (Real-time)"] = self.solar_integrator.update(output["panel_production_power"], current_time)
+                output["Grid Consumption Energy (Real-time)"] = self.grid_consumption_integrator.update(output["grid_consumption_power"], current_time)
+                output["Grid Injection Energy (Real-time)"] = self.grid_injection_integrator.update(output["grid_injection_power"], current_time)
+                output["Battery Consumption Energy (Real-time)"] = self.battery_consumption_integrator.update(output["battery_consumption_power"], current_time)
+                output["Battery Injection Energy (Real-time)"] = self.battery_injection_integrator.update(output["battery_injection_power"], current_time)
 
             output["exit_code"] = "SUCCESS"
             _LOGGER.debug("output JSON: %s", output)
