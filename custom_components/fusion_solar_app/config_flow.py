@@ -195,20 +195,24 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                     _LOGGER.exception("Unexpected exception: %s", err)
                     errors["base"] = "unknown"
         
-        # Get CAPTCHA image for display
-        api = FusionSolarAPI(original_data[CONF_USERNAME], original_data[CONF_PASSWORD], original_data[FUSION_SOLAR_HOST], None)
-        _LOGGER.debug("Obtaining Captcha image...")
-        await self.hass.async_add_executor_job(api.set_captcha_img)
-        captcha_img = api.captcha_img
-        _LOGGER.debug("Got most recent Captcha image...")
+        # Get CAPTCHA image for display (only if no user input yet or if there are errors)
+        if user_input is None or errors:
+            api = FusionSolarAPI(original_data[CONF_USERNAME], original_data[CONF_PASSWORD], original_data[FUSION_SOLAR_HOST], None)
+            _LOGGER.debug("Obtaining Captcha image...")
+            await self.hass.async_add_executor_job(api.set_captcha_img)
+            captcha_img = api.captcha_img
+            _LOGGER.debug("Got most recent Captcha image...")
+        else:
+            # If no errors, we shouldn't reach here, but just in case
+            captcha_img = ""
     
         return self.async_show_form(
             step_id="captcha",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_USERNAME, default=user_input[CONF_USERNAME]): str,
-                    vol.Required(CONF_PASSWORD, default=user_input[CONF_PASSWORD]): str,
-                    vol.Required(FUSION_SOLAR_HOST, default=user_input[FUSION_SOLAR_HOST]): str,
+                    vol.Required(CONF_USERNAME, default=original_data[CONF_USERNAME]): str,
+                    vol.Required(CONF_PASSWORD, default=original_data[CONF_PASSWORD]): str,
+                    vol.Required(FUSION_SOLAR_HOST, default=original_data[FUSION_SOLAR_HOST]): str,
                     vol.Required(CAPTCHA_INPUT): str,
                 }
             ),
