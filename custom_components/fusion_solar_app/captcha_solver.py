@@ -1,11 +1,20 @@
 import os
+import logging
+
+_LOGGER = logging.getLogger(__name__)
+
 try:
     import cv2
     import numpy as np
     import onnxruntime as rt
-except ImportError:
-    print("CAPTCHA solving libraries not available. Install opencv-python, numpy, and onnxruntime")
-    raise ImportError("CAPTCHA solving libraries not available. Install opencv-python, numpy, and onnxruntime")
+    CAPTCHA_DEPENDENCIES_AVAILABLE = True
+except ImportError as e:
+    _LOGGER.warning("CAPTCHA solving libraries not available: %s", e)
+    CAPTCHA_DEPENDENCIES_AVAILABLE = False
+    # Set dummy values to prevent errors
+    cv2 = None
+    np = None
+    rt = None
 
 from .ctc_decoder import decode
 
@@ -15,6 +24,9 @@ blank_idx = 20
 class CaptchaSolver:
     
     def __init__(self):
+        if not CAPTCHA_DEPENDENCIES_AVAILABLE:
+            raise ImportError("CAPTCHA solving libraries not available. Install opencv-python, numpy, and onnxruntime")
+        
         # Get the directory where this file is located
         current_dir = os.path.dirname(os.path.abspath(__file__))
         self.model_path = os.path.join(current_dir, 'models', 'captcha_huawei.onnx')
@@ -22,6 +34,8 @@ class CaptchaSolver:
         self._init_model()
 
     def _init_model(self):
+        if not os.path.exists(self.model_path):
+            raise FileNotFoundError(f"CAPTCHA model not found at {self.model_path}")
         self.session = rt.InferenceSession(self.model_path, providers=self.device)
 
 

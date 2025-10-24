@@ -14,7 +14,15 @@ from datetime import datetime, timedelta, timezone
 from dateutil.relativedelta import relativedelta
 from .const import DOMAIN, PUBKEY_URL, LOGIN_HEADERS_1_STEP_REFERER, LOGIN_HEADERS_2_STEP_REFERER, LOGIN_VALIDATE_USER_URL, LOGIN_FORM_URL, DATA_URL, STATION_LIST_URL, KEEP_ALIVE_URL, DATA_REFERER_URL, ENERGY_BALANCE_URL, LOGIN_DEFAULT_REDIRECT_URL, CAPTCHA_URL
 from .utils import extract_numeric, encrypt_password, generate_nonce
-from .captcha_solver import CaptchaSolver
+
+# Try to import CAPTCHA solver, but make it optional
+try:
+    from .captcha_solver import CaptchaSolver
+    CAPTCHA_SOLVER_AVAILABLE = True
+except ImportError as e:
+    _LOGGER.warning("CAPTCHA solver not available: %s", e)
+    CAPTCHA_SOLVER_AVAILABLE = False
+    CaptchaSolver = None
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -162,8 +170,16 @@ class FusionSolarAPI:
         self.user_id = None  # Dynamic user ID
         self.session = requests.Session()  # Use session for cookie persistence
         
-        # CAPTCHA solver
-        self.captcha_solver = CaptchaSolver()
+        # CAPTCHA solver (optional)
+        if CAPTCHA_SOLVER_AVAILABLE:
+            try:
+                self.captcha_solver = CaptchaSolver()
+                _LOGGER.info("CAPTCHA solver initialized successfully")
+            except Exception as e:
+                _LOGGER.warning("Failed to initialize CAPTCHA solver: %s", e)
+                self.captcha_solver = None
+        else:
+            self.captcha_solver = None
         
         # Power integrators for real-time energy calculation
         self.solar_integrator = PowerIntegrator()
@@ -255,26 +271,31 @@ class FusionSolarAPI:
                     _LOGGER.error("Login failed with error code: %s - %s", error_code, error_msg)
                     
                     if error_code == '411':
-                        _LOGGER.warning("Captcha required. Attempting automatic solving...")
-                        try:
-                            # Get CAPTCHA image
-                            captcha_img = self.get_captcha_image()
-                            if captcha_img:
-                                # Solve CAPTCHA automatically
-                                captcha_solution = self.captcha_solver.solve_captcha(captcha_img)
-                                _LOGGER.info("CAPTCHA solved automatically: %s", captcha_solution)
-                                
-                                # Update captcha_input with the solution
-                                self.captcha_input = captcha_solution
-                                
-                                # Retry login with solved CAPTCHA
-                                _LOGGER.info("Retrying login with solved CAPTCHA...")
-                                return self.login()  # Recursive call with solved CAPTCHA
-                            else:
-                                _LOGGER.error("Failed to get CAPTCHA image")
+                        _LOGGER.warning("Captcha required.")
+                        if self.captcha_solver is not None:
+                            _LOGGER.info("Attempting automatic CAPTCHA solving...")
+                            try:
+                                # Get CAPTCHA image
+                                captcha_img = self.get_captcha_image()
+                                if captcha_img:
+                                    # Solve CAPTCHA automatically
+                                    captcha_solution = self.captcha_solver.solve_captcha(captcha_img)
+                                    _LOGGER.info("CAPTCHA solved automatically: %s", captcha_solution)
+                                    
+                                    # Update captcha_input with the solution
+                                    self.captcha_input = captcha_solution
+                                    
+                                    # Retry login with solved CAPTCHA
+                                    _LOGGER.info("Retrying login with solved CAPTCHA...")
+                                    return self.login()  # Recursive call with solved CAPTCHA
+                                else:
+                                    _LOGGER.error("Failed to get CAPTCHA image")
+                                    raise APIAuthCaptchaError("Login requires Captcha.")
+                            except Exception as e:
+                                _LOGGER.error("CAPTCHA solving failed: %s", e)
                                 raise APIAuthCaptchaError("Login requires Captcha.")
-                        except Exception as e:
-                            _LOGGER.error("CAPTCHA solving failed: %s", e)
+                        else:
+                            _LOGGER.warning("CAPTCHA solver not available. Manual input required.")
                             raise APIAuthCaptchaError("Login requires Captcha.")
                     elif error_code == '401':
                         raise APIAuthError(f"Invalid credentials: {error_msg}")
