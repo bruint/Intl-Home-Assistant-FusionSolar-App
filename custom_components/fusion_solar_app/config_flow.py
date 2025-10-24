@@ -78,7 +78,7 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
             # Store the domain and move to credentials step
             self._input_data = user_input
             _LOGGER.error("CAPTCHA Debug - Domain collected: %s", user_input[FUSION_SOLAR_HOST])
-            return await self.async_step_credentials()
+            return await self.async_step_captcha()
 
         # Show domain form
         return self.async_show_form(
