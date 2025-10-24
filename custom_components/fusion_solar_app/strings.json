@@ -14,9 +14,16 @@
     "step": {
       "user": {
         "data": {
+          "fusion_solar_host": "Fusion Solar Login Host"
+        }
+      },
+      "credentials": {
+        "title": "Fusion Solar App: Credentials",
+        "description": "Enter your credentials for {domain}\n\n{captcha_img}",
+        "data": {
           "username": "Username",
           "password": "Password",
-          "fusion_solar_host": "Fusion Solar Login Host"
+          "captcha_input": "Captcha"
         }
       },
       "reconfigure": {

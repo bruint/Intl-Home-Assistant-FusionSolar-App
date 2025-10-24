@@ -142,16 +142,24 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
             await self.hass.async_add_executor_job(api.set_captcha_img)
             captcha_img = api.captcha_img
             _LOGGER.error("CAPTCHA Debug - CAPTCHA image obtained: %s", "SUCCESS" if captcha_img else "FAILED")
+            if captcha_img:
+                _LOGGER.error("CAPTCHA Debug - Image length: %d characters", len(captcha_img))
+                _LOGGER.error("CAPTCHA Debug - Image starts with: %s", captcha_img[:50] if len(captcha_img) > 50 else captcha_img)
+            else:
+                _LOGGER.error("CAPTCHA Debug - No image data received")
         except Exception as err:
             _LOGGER.error("CAPTCHA Debug - Failed to get CAPTCHA image: %s", err)
             captcha_img = ""
         
         # Show credentials form with CAPTCHA
+        captcha_html = '<img id="fusion_solar_app_security_captcha" src="' + captcha_img + '"/>' if captcha_img else '<p><strong>CAPTCHA Image Failed to Load</strong><br/>Please try refreshing the page or check your network connection.</p>'
+        _LOGGER.error("CAPTCHA Debug - HTML to display: %s", captcha_html[:100] + "..." if len(captcha_html) > 100 else captcha_html)
+        
         return self.async_show_form(
             step_id="credentials",
             data_schema=STEP_CREDENTIALS_DATA_SCHEMA,
             description_placeholders={
-                "captcha_img": '<img id="fusion_solar_app_security_captcha" src="' + captcha_img + '"/>' if captcha_img else '<p><strong>CAPTCHA Image Failed to Load</strong><br/>Please try refreshing the page or check your network connection.</p>',
+                "captcha_img": captcha_html,
                 "domain": domain
             },
             errors=errors,
