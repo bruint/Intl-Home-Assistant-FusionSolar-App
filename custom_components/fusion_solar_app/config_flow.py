@@ -208,25 +208,29 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                     else:
                         errors["base"] = "unknown"
         
-        # Get CAPTCHA image for display (only if no user input yet or if there are errors)
-        if user_input is None or errors:
-            try:
-                api = FusionSolarAPI(original_data[CONF_USERNAME], original_data[CONF_PASSWORD], original_data[FUSION_SOLAR_HOST], None)
-                _LOGGER.debug("Obtaining Captcha image...")
-                await self.hass.async_add_executor_job(api.set_captcha_img)
-                captcha_img = api.captcha_img
-                _LOGGER.debug("Got most recent Captcha image...")
-            except Exception as err:
-                _LOGGER.error("Failed to get CAPTCHA image: %s", err)
-                captcha_img = ""
-                if not errors:  # Only add error if there wasn't already an error
-                    if "Network unreachable" in str(err) or "Connection refused" in str(err):
-                        errors["base"] = "cannot_connect"
+            # Get CAPTCHA image for display (only if no user input yet or if there are errors)
+            if user_input is None or errors:
+                try:
+                    api = FusionSolarAPI(original_data[CONF_USERNAME], original_data[CONF_PASSWORD], original_data[FUSION_SOLAR_HOST], None)
+                    _LOGGER.debug("Obtaining Captcha image...")
+                    await self.hass.async_add_executor_job(api.set_captcha_img)
+                    captcha_img = api.captcha_img
+                    _LOGGER.info("CAPTCHA Debug - Captcha image obtained: %s", "SUCCESS" if captcha_img else "FAILED")
+                    if captcha_img:
+                        _LOGGER.info("CAPTCHA Debug - Image length: %d characters", len(captcha_img))
                     else:
-                        errors["base"] = "unknown"
-        else:
-            # If no errors, we shouldn't reach here, but just in case
-            captcha_img = ""
+                        _LOGGER.warning("CAPTCHA Debug - No captcha image available")
+                except Exception as err:
+                    _LOGGER.error("Failed to get CAPTCHA image: %s", err)
+                    captcha_img = ""
+                    if not errors:  # Only add error if there wasn't already an error
+                        if "Network unreachable" in str(err) or "Connection refused" in str(err):
+                            errors["base"] = "cannot_connect"
+                        else:
+                            errors["base"] = "unknown"
+            else:
+                # If no errors, we shouldn't reach here, but just in case
+                captcha_img = ""
     
         return self.async_show_form(
             step_id="captcha",
@@ -238,7 +242,7 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                     vol.Required(CAPTCHA_INPUT): str,
                 }
             ),
-            description_placeholders={"captcha_img": '<img id="fusion_solar_app_security_captcha" src="' + captcha_img + '"/>'},
+            description_placeholders={"captcha_img": '<img id="fusion_solar_app_security_captcha" src="' + captcha_img + '"/>' if captcha_img else '<p><strong>CAPTCHA Image Failed to Load</strong><br/>Please try refreshing the page or check your network connection.</p>'},
             errors=errors,
         )
 

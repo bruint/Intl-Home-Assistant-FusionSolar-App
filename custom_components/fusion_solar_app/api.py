@@ -382,13 +382,16 @@ class FusionSolarAPI:
     def set_captcha_img(self):
         timestampNow = datetime.now().timestamp() * 1000
         captcha_request_url = f"https://{self.login_host}{CAPTCHA_URL}?timestamp={timestampNow}"
-        _LOGGER.debug("Requesting Captcha at: %s", captcha_request_url)
+        _LOGGER.info("CAPTCHA Debug - Requesting Captcha at: %s", captcha_request_url)
         response = self.session.get(captcha_request_url)
+        _LOGGER.info("CAPTCHA Debug - Captcha response status: %d", response.status_code)
         
         if response.status_code == 200:
             self.captcha_img = f"data:image/png;base64,{base64.b64encode(response.content).decode('utf-8')}"
+            _LOGGER.info("CAPTCHA Debug - Captcha image created successfully, length: %d", len(self.captcha_img))
         else:
             self.captcha_img = None
+            _LOGGER.error("CAPTCHA Debug - Failed to get captcha image, status: %d", response.status_code)
 
     def refresh_csrf(self):
         """Refresh CSRF token (roarand) for main API endpoints"""
