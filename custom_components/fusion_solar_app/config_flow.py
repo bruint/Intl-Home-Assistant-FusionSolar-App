@@ -90,27 +90,30 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             # The form has been filled in and submitted, so process the data provided.
             try:
-                # Validate that the setup data is valid and if not handle errors.
-                # The errors["base"] values match the values in your strings.json and translation files.
-                info = await validate_input(self.hass, user_input)
+                # First, try to get the domain and check if CAPTCHA is required
+                api = FusionSolarAPI(user_input[CONF_USERNAME], user_input[CONF_PASSWORD], user_input[FUSION_SOLAR_HOST], None)
+                
+                # Check if CAPTCHA is required by attempting a login
+                _LOGGER.error("CAPTCHA Debug - Checking if CAPTCHA is required for domain: %s", user_input[FUSION_SOLAR_HOST])
+                await self.hass.async_add_executor_job(api.login)
+                
+                # If we get here, login was successful without CAPTCHA
+                info = {"title": f"Fusion Solar App Integration"}
+                await self.async_set_unique_id(info.get("title"))
+                self._abort_if_unique_id_configured()
+                return self.async_create_entry(title=info["title"], data=user_input)
+                
+            except APIAuthCaptchaError:
+                _LOGGER.error("CAPTCHA Debug - CAPTCHA required, redirecting to CAPTCHA step")
+                self._input_data = user_input  # Store the original user data
+                return await self.async_step_captcha(user_input)
             except CannotConnect:
                 errors["base"] = "cannot_connect"
             except InvalidAuth:
                 errors["base"] = "invalid_auth"
-            except InvalidCaptcha:
-                _LOGGER.exception("Captcha failed, redirecting to Captcha screen")
-                self._input_data = user_input  # Store the original user data
-                return await self.async_step_captcha(user_input)
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
-
-            if "base" not in errors:
-                # Validation was successful, so create a unique id for this instance of your integration
-                # and create the config entry.
-                await self.async_set_unique_id(info.get("title"))
-                self._abort_if_unique_id_configured()
-                return self.async_create_entry(title=info["title"], data=user_input)
 
         # Show initial form.
         return self.async_show_form(
@@ -235,15 +238,16 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
             # Get CAPTCHA image for display (only if no user input yet or if there are errors)
             if user_input is None or errors:
                 try:
+                    # Create API instance and get CAPTCHA image in the same session
                     api = FusionSolarAPI(original_data[CONF_USERNAME], original_data[CONF_PASSWORD], original_data[FUSION_SOLAR_HOST], None)
-                    _LOGGER.debug("Obtaining Captcha image...")
+                    _LOGGER.error("CAPTCHA Debug - Obtaining Captcha image for domain: %s", original_data[FUSION_SOLAR_HOST])
                     await self.hass.async_add_executor_job(api.set_captcha_img)
                     captcha_img = api.captcha_img
-                    _LOGGER.info("CAPTCHA Debug - Captcha image obtained: %s", "SUCCESS" if captcha_img else "FAILED")
+                    _LOGGER.error("CAPTCHA Debug - Captcha image obtained: %s", "SUCCESS" if captcha_img else "FAILED")
                     if captcha_img:
-                        _LOGGER.info("CAPTCHA Debug - Image length: %d characters", len(captcha_img))
+                        _LOGGER.error("CAPTCHA Debug - Image length: %d characters", len(captcha_img))
                     else:
-                        _LOGGER.warning("CAPTCHA Debug - No captcha image available")
+                        _LOGGER.error("CAPTCHA Debug - No captcha image available")
                 except Exception as err:
                     _LOGGER.error("Failed to get CAPTCHA image: %s", err)
                     captcha_img = ""
