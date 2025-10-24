@@ -44,26 +44,10 @@ STEP_CAPTCHA_DATA_SCHEMA = vol.Schema(
 )
 
 
-async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
-    """Validate the user input allows us to connect.
-
-    Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
-    """
-    api = FusionSolarAPI(data[CONF_USERNAME], data[CONF_PASSWORD], data[FUSION_SOLAR_HOST], data.get(CAPTCHA_INPUT, None))
-    try:
-        await hass.async_add_executor_job(api.login)
-        # If you cannot connect, raise CannotConnect
-        # If the authentication is wrong, raise InvalidAuth
-    except APIAuthError as err:
-        raise InvalidAuth from err
-    except APIAuthCaptchaError as err:
-        raise InvalidCaptcha from err
-    except APIConnectionError as err:
-        raise CannotConnect from err
-    return {"title": f"Fusion Solar App Integration"}
+# validate_input function removed - validation now done directly in async_step_user
 
 
-class FusionSolarConfigFlow(ConfigFlow):
+class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Fusion Solar App Integration."""
 
     VERSION = 1
@@ -73,7 +57,6 @@ class FusionSolarConfigFlow(ConfigFlow):
         """Initialize the config flow."""
         super().__init__()
         self._input_data = {}
-        self.domain = DOMAIN
 
     @staticmethod
     @callback
