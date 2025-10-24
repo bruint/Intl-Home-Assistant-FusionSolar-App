@@ -81,6 +81,13 @@ DEVICES = [
     {"id": "Battery Percentage", "type": DeviceType.SENSOR_PERCENTAGE, "icon": ""},
     {"id": "Battery Capacity", "type": DeviceType.SENSOR_KW, "icon": "mdi:home-lightning-bolt-outline"},
     {"id": "Last Authentication Time", "type": DeviceType.SENSOR_TIME, "icon": "mdi:clock-outline"},
+    
+    # Real-time interval energy sensors for Energy Dashboard
+    {"id": "Solar Production Energy (Real-time)", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
+    {"id": "Grid Consumption Energy (Real-time)", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-export"},
+    {"id": "Grid Injection Energy (Real-time)", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-import"},
+    {"id": "Battery Consumption Energy (Real-time)", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging-100"},
+    {"id": "Battery Injection Energy (Real-time)", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging"},
 ]
 
 @dataclass
@@ -93,6 +100,38 @@ class Device:
     name: str
     state: float | int | datetime
     icon: str
+
+
+class PowerIntegrator:
+    """Class to integrate power over time for real-time energy calculations."""
+    
+    def __init__(self):
+        self.last_update: datetime | None = None
+        self.last_power: float = 0.0
+        self.accumulated_energy: float = 0.0
+        self.day_start: datetime | None = None
+    
+    def update(self, power: float, current_time: datetime) -> float:
+        """Update the integrator with new power reading and return accumulated energy."""
+        # Reset at midnight
+        if self.day_start is None or current_time.date() != self.day_start.date():
+            self.day_start = current_time.replace(hour=0, minute=0, second=0, microsecond=0)
+            self.accumulated_energy = 0.0
+            self.last_update = None
+        
+        # Calculate energy since last update using trapezoidal rule
+        if self.last_update is not None:
+            time_diff_hours = (current_time - self.last_update).total_seconds() / 3600
+            # Average power over the interval
+            avg_power = (power + self.last_power) / 2
+            energy_increment = avg_power * time_diff_hours
+            self.accumulated_energy += energy_increment
+        
+        # Update state
+        self.last_update = current_time
+        self.last_power = power
+        
+        return self.accumulated_energy
 
 
 class FusionSolarAPI:
@@ -121,6 +160,13 @@ class FusionSolarAPI:
         self.uni_csrf_time = None
         self.user_id = None  # Dynamic user ID
         self.session = requests.Session()  # Use session for cookie persistence
+        
+        # Power integrators for real-time energy calculation
+        self.solar_integrator = PowerIntegrator()
+        self.grid_consumption_integrator = PowerIntegrator()
+        self.grid_injection_integrator = PowerIntegrator()
+        self.battery_consumption_integrator = PowerIntegrator()
+        self.battery_injection_integrator = PowerIntegrator()
 
     @property
     def controller_name(self) -> str:
@@ -650,6 +696,14 @@ class FusionSolarAPI:
 
             self.update_output_with_battery_capacity(output)
             self.update_output_with_energy_balance(output)
+            
+            # Calculate real-time energy using power integration
+            current_time = datetime.now()
+            output["Solar Production Energy (Real-time)"] = self.solar_integrator.update(output["panel_production_power"], current_time)
+            output["Grid Consumption Energy (Real-time)"] = self.grid_consumption_integrator.update(output["grid_consumption_power"], current_time)
+            output["Grid Injection Energy (Real-time)"] = self.grid_injection_integrator.update(output["grid_injection_power"], current_time)
+            output["Battery Consumption Energy (Real-time)"] = self.battery_consumption_integrator.update(output["battery_consumption_power"], current_time)
+            output["Battery Injection Energy (Real-time)"] = self.battery_injection_integrator.update(output["battery_injection_power"], current_time)
 
             output["exit_code"] = "SUCCESS"
             _LOGGER.debug("output JSON: %s", output)
