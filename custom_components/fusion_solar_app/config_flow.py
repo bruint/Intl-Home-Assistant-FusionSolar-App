@@ -152,7 +152,12 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
             captcha_img = ""
         
         # Show credentials form with CAPTCHA
-        captcha_html = '<img id="fusion_solar_app_security_captcha" src="' + captcha_img + '"/>' if captcha_img else '<p><strong>CAPTCHA Image Failed to Load</strong><br/>Please try refreshing the page or check your network connection.</p>'
+        if captcha_img:
+            # Use exact same format as the old working version
+            captcha_html = '<img id="fusion_solar_app_security_captcha" src="' + captcha_img + '"/>'
+        else:
+            captcha_html = '<p><strong>CAPTCHA Image Failed to Load</strong><br/>Please try refreshing the page or check your network connection.</p>'
+        
         _LOGGER.error("CAPTCHA Debug - HTML to display: %s", captcha_html[:100] + "..." if len(captcha_html) > 100 else captcha_html)
         
         return self.async_show_form(
