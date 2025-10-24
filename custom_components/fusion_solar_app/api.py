@@ -170,16 +170,9 @@ class FusionSolarAPI:
         self.user_id = None  # Dynamic user ID
         self.session = requests.Session()  # Use session for cookie persistence
         
-        # CAPTCHA solver (optional)
-        if CAPTCHA_SOLVER_AVAILABLE:
-            try:
-                self.captcha_solver = CaptchaSolver()
-                _LOGGER.info("CAPTCHA solver initialized successfully")
-            except Exception as e:
-                _LOGGER.warning("Failed to initialize CAPTCHA solver: %s", e)
-                self.captcha_solver = None
-        else:
-            self.captcha_solver = None
+        # CAPTCHA solver disabled - use manual input only
+        self.captcha_solver = None
+        _LOGGER.info("CAPTCHA solver disabled - using manual input only")
         
         # Power integrators for real-time energy calculation
         self.solar_integrator = PowerIntegrator()
@@ -277,39 +270,9 @@ class FusionSolarAPI:
                         _LOGGER.warning("Captcha required.")
                         _LOGGER.info("CAPTCHA Debug - Manual input provided: '%s'", self.captcha_input)
                         
-                        # If manual CAPTCHA input was provided, retry login with it
-                        if self.captcha_input and self.captcha_input.strip():
-                            _LOGGER.info("CAPTCHA Debug - Manual input provided, retrying login with: %s", self.captcha_input)
-                            # The CAPTCHA input is already in the payload, so just raise the error
-                            # The config flow will handle retrying with the same CAPTCHA
-                            raise APIAuthCaptchaError("Login requires Captcha.")
-                        
-                        # Only try automatic solving if no manual input was provided
-                        if self.captcha_solver is not None:
-                            _LOGGER.info("Attempting automatic CAPTCHA solving...")
-                            try:
-                                # Get CAPTCHA image
-                                captcha_img = self.get_captcha_image()
-                                if captcha_img:
-                                    # Solve CAPTCHA automatically
-                                    captcha_solution = self.captcha_solver.solve_captcha(captcha_img)
-                                    _LOGGER.info("CAPTCHA solved automatically: %s", captcha_solution)
-                                    
-                                    # Update captcha_input with the solution
-                                    self.captcha_input = captcha_solution
-                                    
-                                    # Retry login with solved CAPTCHA
-                                    _LOGGER.info("Retrying login with solved CAPTCHA...")
-                                    return self.login()  # Recursive call with solved CAPTCHA
-                                else:
-                                    _LOGGER.error("Failed to get CAPTCHA image")
-                                    raise APIAuthCaptchaError("Login requires Captcha.")
-                            except Exception as e:
-                                _LOGGER.error("CAPTCHA solving failed: %s", e)
-                                raise APIAuthCaptchaError("Login requires Captcha.")
-                        else:
-                            _LOGGER.warning("CAPTCHA solver not available. Manual input required.")
-                            raise APIAuthCaptchaError("Login requires Captcha.")
+                        # Always raise CAPTCHA error - let config flow handle manual input
+                        _LOGGER.info("CAPTCHA Debug - Raising CAPTCHA error for manual input handling")
+                        raise APIAuthCaptchaError("Login requires Captcha.")
                     elif error_code == '401':
                         raise APIAuthError(f"Invalid credentials: {error_msg}")
                     else:
