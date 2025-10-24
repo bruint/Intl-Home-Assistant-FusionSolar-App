@@ -174,9 +174,8 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                     vol.Required(CAPTCHA_INPUT): str,
                 }
             ),
-            description_placeholders={"captcha_img": captcha_html},
+            description_placeholders={"captcha_img": captcha_html, "domain": domain},
             errors=errors,
-            description=f"Enter your credentials for {domain}\n\n{captcha_html}",
         )
 
     async def async_step_reconfigure(
