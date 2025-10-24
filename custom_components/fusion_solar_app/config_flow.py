@@ -1,8 +1,5 @@
 """Config flow for Fusion Solar App Integration."""
 
-# Version check for debugging
-DEBUG_VERSION = "v1.3.11-form-debug"
-
 from __future__ import annotations
 
 import logging
@@ -29,7 +26,7 @@ from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, MIN_SCAN_INTERVAL, FUSION_SOLA
 
 
 _LOGGER = logging.getLogger(__name__)
-_LOGGER.error("CAPTCHA Debug - Config flow loaded with version: %s", DEBUG_VERSION)
+_LOGGER.error("CAPTCHA Debug - Config flow loaded with version: %s", "v1.3.13-two-step-captcha")
 
 # TODO adjust the data schema to the data that you need
 STEP_USER_DATA_SCHEMA = vol.Schema(
@@ -66,11 +63,16 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     return {"title": f"Fusion Solar App Integration"}
 
 
-class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
+class FusionSolarConfigFlow(ConfigFlow):
     """Handle a config flow for Fusion Solar App Integration."""
 
     VERSION = 1
     _input_data: dict[str, Any]
+
+    def __init__(self):
+        """Initialize the config flow."""
+        super().__init__()
+        self._input_data = {}
 
     @staticmethod
     @callback
