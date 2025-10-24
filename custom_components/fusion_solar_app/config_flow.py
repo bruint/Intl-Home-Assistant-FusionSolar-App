@@ -160,16 +160,36 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
         )
     
     async def async_step_captcha(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        _LOGGER.info("CAPTCHA Debug - async_step_captcha called with user_input: %s", user_input)
         errors: dict[str, str] = {}
         
         # Get the original user data from the flow context
         original_data = self._input_data if hasattr(self, '_input_data') else user_input
+        _LOGGER.info("CAPTCHA Debug - Original data: %s", original_data)
         
         if user_input is not None:
+            _LOGGER.info("CAPTCHA Debug - Raw user_input keys: %s", list(user_input.keys()))
+            _LOGGER.info("CAPTCHA Debug - Raw user_input values: %s", user_input)
+            _LOGGER.info("CAPTCHA Debug - CAPTCHA_INPUT constant: '%s'", CAPTCHA_INPUT)
+            
+            # Try different possible field names
             captcha_response = user_input.get(CAPTCHA_INPUT, "").strip()
-            _LOGGER.info("CAPTCHA Debug - Raw user_input: %s", user_input)
-            _LOGGER.info("CAPTCHA Debug - CAPTCHA_INPUT constant: %s", CAPTCHA_INPUT)
-            _LOGGER.info("CAPTCHA Debug - Extracted captcha_response: '%s'", captcha_response)
+            if not captcha_response:
+                # Try alternative field names
+                captcha_response = user_input.get("captcha", "").strip()
+                _LOGGER.info("CAPTCHA Debug - Tried 'captcha' field: '%s'", captcha_response)
+            if not captcha_response:
+                captcha_response = user_input.get("verifycode", "").strip()
+                _LOGGER.info("CAPTCHA Debug - Tried 'verifycode' field: '%s'", captcha_response)
+            if not captcha_response:
+                # Try any field that might contain captcha
+                for key, value in user_input.items():
+                    if "captcha" in key.lower() or "verify" in key.lower():
+                        captcha_response = str(value).strip()
+                        _LOGGER.info("CAPTCHA Debug - Found potential captcha field '%s': '%s'", key, captcha_response)
+                        break
+            
+            _LOGGER.info("CAPTCHA Debug - Final extracted captcha_response: '%s'", captcha_response)
     
             if not captcha_response:
                 _LOGGER.warning("No Captcha code filled.")
@@ -232,16 +252,22 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                 # If no errors, we shouldn't reach here, but just in case
                 captcha_img = ""
     
+        # Create the form schema
+        form_schema = vol.Schema(
+            {
+                vol.Required(CONF_USERNAME, default=original_data[CONF_USERNAME]): str,
+                vol.Required(CONF_PASSWORD, default=original_data[CONF_PASSWORD]): str,
+                vol.Required(FUSION_SOLAR_HOST, default=original_data[FUSION_SOLAR_HOST]): str,
+                vol.Required(CAPTCHA_INPUT): str,
+            }
+        )
+        
+        _LOGGER.info("CAPTCHA Debug - Form schema fields: %s", list(form_schema.schema.keys()))
+        _LOGGER.info("CAPTCHA Debug - CAPTCHA_INPUT in schema: %s", CAPTCHA_INPUT in form_schema.schema)
+        
         return self.async_show_form(
             step_id="captcha",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_USERNAME, default=original_data[CONF_USERNAME]): str,
-                    vol.Required(CONF_PASSWORD, default=original_data[CONF_PASSWORD]): str,
-                    vol.Required(FUSION_SOLAR_HOST, default=original_data[FUSION_SOLAR_HOST]): str,
-                    vol.Required(CAPTCHA_INPUT): str,
-                }
-            ),
+            data_schema=form_schema,
             description_placeholders={"captcha_img": '<img id="fusion_solar_app_security_captcha" src="' + captcha_img + '"/>' if captcha_img else '<p><strong>CAPTCHA Image Failed to Load</strong><br/>Please try refreshing the page or check your network connection.</p>'},
             errors=errors,
         )
