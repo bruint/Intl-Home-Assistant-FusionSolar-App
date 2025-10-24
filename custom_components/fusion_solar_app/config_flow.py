@@ -73,6 +73,7 @@ class FusionSolarConfigFlow(ConfigFlow):
         """Initialize the config flow."""
         super().__init__()
         self._input_data = {}
+        self.domain = DOMAIN
 
     @staticmethod
     @callback
