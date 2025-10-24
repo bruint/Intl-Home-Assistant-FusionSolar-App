@@ -23,6 +23,7 @@
         "data": {
           "username": "Username",
           "password": "Password",
+          "fusion_solar_host": "Fusion Solar Login Host",
           "captcha_input": "Captcha"
         }
       },
@@ -31,13 +32,6 @@
           "username": "Username",
           "password": "Password",
           "fusion_solar_host": "Fusion Solar Login Host"
-        }
-      },
-      "captcha": {
-        "title": "Fusion Solar App: Captcha",
-        "description": "{captcha_img}",
-        "data": {
-          "captcha_input": "Captcha"
         }
       }
     }

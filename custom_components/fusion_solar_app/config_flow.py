@@ -34,20 +34,6 @@ STEP_DOMAIN_DATA_SCHEMA = vol.Schema(
     }
 )
 
-# Step 2: Credentials and CAPTCHA
-STEP_CREDENTIALS_DATA_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_USERNAME, description={"suggested_value": ""}): str,
-        vol.Required(CONF_PASSWORD, description={"suggested_value": ""}): str,
-        vol.Required(CAPTCHA_INPUT): str,
-    }
-)
-
-# STEP_CAPTCHA_DATA_SCHEMA removed - CAPTCHA now integrated into credentials step
-
-
-# validate_input function removed - validation now done directly in async_step_user
-
 
 class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Fusion Solar App Integration."""
@@ -189,15 +175,25 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             try:
-                info = await validate_input(self.hass, user_input)
-            except CannotConnect:
-                errors["base"] = "cannot_connect"
-            except InvalidAuth:
-                errors["base"] = "invalid_auth"
-            except InvalidCaptcha:
+                # Try to login with the provided credentials
+                api = FusionSolarAPI(
+                    user_input[CONF_USERNAME], 
+                    user_input[CONF_PASSWORD], 
+                    user_input[FUSION_SOLAR_HOST], 
+                    ""
+                )
+                await self.hass.async_add_executor_job(api.login)
+                
+                # If we get here, login was successful
+                info = {"title": f"Fusion Solar App Integration"}
+            except APIAuthCaptchaError:
                 _LOGGER.exception("Captcha failed, redirecting to Credentials screen")
                 self._input_data = user_input  # Store the original user data
                 return await self.async_step_captcha()
+            except APIAuthError:
+                errors["base"] = "invalid_auth"
+            except APIConnectionError:
+                errors["base"] = "cannot_connect"
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
@@ -248,13 +244,3 @@ class FusionSolarOptionsFlowHandler(OptionsFlow):
         )
 
         return self.async_show_form(step_id="init", data_schema=data_schema)
-
-
-class CannotConnect(HomeAssistantError):
-    """Error to indicate we cannot connect."""
-
-class InvalidAuth(HomeAssistantError):
-    """Error to indicate there is invalid auth."""
-
-class InvalidCaptcha(HomeAssistantError):
-    """Error to indicate there is invalid captcha."""
