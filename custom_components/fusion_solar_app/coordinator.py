@@ -71,6 +71,8 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
             # Set cookies on the API's session
             for name, value in session_cookies.items():
                 self.api.session.cookies.set(name, value)
+            # Set data_host to the login host for API calls
+            self.api.data_host = self.login_host
             # Mark as connected since we have a valid session
             self.api.connected = True
             # Note: Station data will be retrieved in first async_update_data call
