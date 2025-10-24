@@ -13,7 +13,7 @@ from homeassistant.const import (
 from homeassistant.core import DOMAIN, HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import FusionSolarAPI, APIAuthError, Device, DeviceType
+from .api import FusionSolarAPI, APIAuthError, APIAuthCaptchaError, Device, DeviceType
 from .const import DEFAULT_SCAN_INTERVAL, FUSION_SOLAR_HOST, CAPTCHA_INPUT
 
 _LOGGER = logging.getLogger(__name__)
@@ -74,6 +74,14 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
             if not self.api.connected:
                 await self.hass.async_add_executor_job(self.api.login)
             devices = await self.hass.async_add_executor_job(self.api.get_devices)
+        except APIAuthCaptchaError as err:
+            _LOGGER.warning("CAPTCHA required for API access. Integration will retry on next update.")
+            # Don't raise UpdateFailed for CAPTCHA errors - just return empty data
+            # This prevents the integration from becoming unavailable
+            return FusonSolarAPIData(
+                controller_name=self.login_host,
+                devices=[]
+            )
         except APIAuthError as err:
             _LOGGER.error(err)
             await self.hass.async_add_executor_job(self.api.login)
