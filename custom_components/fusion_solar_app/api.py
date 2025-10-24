@@ -13,6 +13,7 @@ from urllib.parse import unquote, quote, urlparse, urlencode
 from datetime import datetime, timedelta, timezone
 from dateutil.relativedelta import relativedelta
 from .const import DOMAIN, PUBKEY_URL, LOGIN_HEADERS_1_STEP_REFERER, LOGIN_HEADERS_2_STEP_REFERER, LOGIN_VALIDATE_USER_URL, LOGIN_FORM_URL, DATA_URL, STATION_LIST_URL, KEEP_ALIVE_URL, DATA_REFERER_URL, ENERGY_BALANCE_URL, LOGIN_DEFAULT_REDIRECT_URL, CAPTCHA_URL
+from .captcha_solver import CaptchaSolver
 from .utils import extract_numeric, encrypt_password, generate_nonce
 
 _LOGGER = logging.getLogger(__name__)
@@ -161,6 +162,9 @@ class FusionSolarAPI:
         self.user_id = None  # Dynamic user ID
         self.session = requests.Session()  # Use session for cookie persistence
         
+        # CAPTCHA solver
+        self.captcha_solver = CaptchaSolver()
+        
         # Power integrators for real-time energy calculation
         self.solar_integrator = PowerIntegrator()
         self.grid_consumption_integrator = PowerIntegrator()
@@ -207,9 +211,25 @@ class FusionSolarAPI:
             "username": self.user
         }
         
-        _LOGGER.debug("captcha_input=%s", self.captcha_input)
+        # Try to solve CAPTCHA automatically if needed
+        captcha_code = None
         if self.captcha_input is not None and self.captcha_input != '':
-            payload["verifycode"] = self.captcha_input
+            captcha_code = self.captcha_input
+        else:
+            # Try to solve CAPTCHA automatically
+            try:
+                captcha_img_data = self.get_captcha_image()
+                if captcha_img_data:
+                    captcha_code = self.captcha_solver.solve_captcha(captcha_img_data)
+                    if captcha_code:
+                        _LOGGER.debug("Auto-solved CAPTCHA: %s", captcha_code)
+                    else:
+                        _LOGGER.warning("Failed to auto-solve CAPTCHA")
+            except Exception as e:
+                _LOGGER.debug("CAPTCHA auto-solve failed: %s", e)
+        
+        if captcha_code:
+            payload["verifycode"] = captcha_code
         
         headers = {
             "Content-Type": "application/json",
@@ -364,14 +384,23 @@ class FusionSolarAPI:
         except Exception as e:
             _LOGGER.error("Error getting user ID: %s", e)
 
-    def set_captcha_img(self):
-        timestampNow = datetime.now().timestamp() * 1000
+    def get_captcha_image(self):
+        """Get CAPTCHA image data for solving."""
+        timestampNow = int(time.time() * 1000)
         captcha_request_url = f"https://{self.login_host}{CAPTCHA_URL}?timestamp={timestampNow}"
         _LOGGER.debug("Requesting Captcha at: %s", captcha_request_url)
         response = self.session.get(captcha_request_url)
-        
         if response.status_code == 200:
-            self.captcha_img = f"data:image/png;base64,{base64.b64encode(response.content).decode('utf-8')}"
+            return response.content
+        else:
+            _LOGGER.warning("Failed to get CAPTCHA image: %s", response.status_code)
+            return None
+
+    def set_captcha_img(self):
+        """Set captcha image."""
+        captcha_data = self.get_captcha_image()
+        if captcha_data:
+            self.captcha_img = f"data:image/png;base64,{base64.b64encode(captcha_data).decode('utf-8')}"
         else:
             self.captcha_img = None
 
