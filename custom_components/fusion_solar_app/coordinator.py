@@ -73,7 +73,47 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
             try:
                 self.api.session.cookies = requests.cookies.RequestsCookieJar()
                 for name, value in session_cookies.items():
+                    # Set raw first; we'll normalize sensitive ones (like JSESSIONID) below
                     self.api.session.cookies.set(name, value)
+
+                # Extra hardening: ensure only ONE JSESSIONID remains and is scoped to the login host
+                try:
+                    jsession_values = []
+                    for c in list(self.api.session.cookies):
+                        if c.name == "JSESSIONID":
+                            jsession_values.append((c.domain, c.path, c.value))
+                            # Clear all JSESSIONID variants
+                            try:
+                                self.api.session.cookies.clear(c.domain, c.path, c.name)
+                            except Exception:
+                                # Fallback clear by name if domain/path unknown
+                                try:
+                                    self.api.session.cookies.clear(name=c.name)
+                                except Exception:
+                                    pass
+                    if jsession_values:
+                        # Choose the most recent value provided in session_cookies
+                        chosen_value = session_cookies.get("JSESSIONID", jsession_values[-1][2])
+                        # Re-set a single normalized cookie bound to the login host
+                        self.api.session.cookies.set(
+                            "JSESSIONID",
+                            chosen_value,
+                            domain=self.login_host,
+                            path="/",
+                        )
+                        _LOGGER.info(
+                            "Normalized JSESSIONID. Before=%s After=%s",
+                            jsession_values,
+                            [(c.domain, c.path, c.value) for c in self.api.session.cookies if c.name == "JSESSIONID"],
+                        )
+                except Exception as norm_err:
+                    _LOGGER.warning("Failed to normalize JSESSIONID cookie: %s", norm_err)
+
+                # Log final cookie jar state for diagnostics
+                _LOGGER.info(
+                    "Final restored cookies: %s",
+                    [(c.name, c.domain, c.path, c.value[:8] + "…") for c in self.api.session.cookies],
+                )
             except Exception as e:
                 _LOGGER.warning("Failed to rebuild session cookies: %s", e)
             # Set data_host to the login host for API calls
