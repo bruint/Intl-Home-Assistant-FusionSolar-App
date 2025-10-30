@@ -68,9 +68,20 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
         session_cookies = config_entry.data.get("session_cookies", {})
         if session_cookies:
             _LOGGER.info("Restoring session cookies from config flow: %s", session_cookies)
-            # Set cookies on the API's session
+            # Replace existing cookies with the same name to avoid duplicates (e.g., JSESSIONID)
             for name, value in session_cookies.items():
-                self.api.session.cookies.set(name, value)
+                try:
+                    # Remove any existing cookies with this name across all domains/paths
+                    for cookie in list(self.api.session.cookies):
+                        if cookie.name == name:
+                            try:
+                                self.api.session.cookies.clear(cookie.domain, cookie.path, cookie.name)
+                            except Exception:  # domain/path may be None; fall back to generic clear
+                                pass
+                    # Set the new cookie value
+                    self.api.session.cookies.set(name, value)
+                except Exception as e:
+                    _LOGGER.warning("Failed to set session cookie %s: %s", name, e)
             # Set data_host to the login host for API calls
             self.api.data_host = self.login_host
             # Mark as connected since we have a valid session
