@@ -750,20 +750,25 @@ class FusionSolarAPI:
                     tz_name = "Europe/London" if self.session_cookie_name == 'dp-session' else "Asia/Singapore"
                     current_time = datetime.now(ZoneInfo(tz_name))
                     minutes_since_midnight = current_time.hour * 60 + current_time.minute
-                    interval_index = minutes_since_midnight // 5  # 5-minute intervals
-                    
-                    # Ensure index is within bounds
-                    if interval_index >= 288:
-                        interval_index = 287  # Last interval of the day
+                    # Number of completed 5-min intervals since midnight (exclusive of current partial interval)
+                    completed_intervals = minutes_since_midnight // 5
+                    # We sum inclusive indices [0..last_completed_index]; if none completed, last_completed_index = -1
+                    last_completed_index = min(max(completed_intervals - 1, -1), 287)
+                    _LOGGER.info(
+                        "Day interval indexing: minutes_since_midnight=%s completed_intervals=%s last_completed_index=%s",
+                        minutes_since_midnight,
+                        completed_intervals,
+                        last_completed_index,
+                    )
                     
                     # Extract energy values from day interval data
                     if "productPower" in day_info and isinstance(day_info["productPower"], list) and len(day_info["productPower"]) > 0:
                         product_power_list = day_info["productPower"]
-                        _LOGGER.info("Processing Solar Production - interval_index=%s, list_length=%s", interval_index, len(product_power_list))
+                        _LOGGER.info("Processing Solar Production - last_completed_index=%s, list_length=%s", last_completed_index, len(product_power_list))
                         # Sum up energy from midnight to current interval
                         total_energy = 0.0
-                        idx = min(interval_index, len(product_power_list) - 1, 287)
-                        for i in range(idx + 1):
+                        idx = min(last_completed_index, len(product_power_list) - 1, 287)
+                        for i in range(max(idx + 1, 0)):
                             if product_power_list[i] not in ["--", "null", ""]:
                                 total_energy += extract_numeric(product_power_list[i])
                         output["Solar Production Energy (Real-time)"] = total_energy
@@ -771,10 +776,10 @@ class FusionSolarAPI:
                     
                     if "buyPower" in day_info and isinstance(day_info["buyPower"], list) and len(day_info["buyPower"]) > 0:
                         buy_power_list = day_info["buyPower"]
-                        _LOGGER.info("Processing Grid Consumption - interval_index=%s, list_length=%s", interval_index, len(buy_power_list))
+                        _LOGGER.info("Processing Grid Consumption - last_completed_index=%s, list_length=%s", last_completed_index, len(buy_power_list))
                         total_energy = 0.0
-                        idx = min(interval_index, len(buy_power_list) - 1, 287)
-                        for i in range(idx + 1):
+                        idx = min(last_completed_index, len(buy_power_list) - 1, 287)
+                        for i in range(max(idx + 1, 0)):
                             if buy_power_list[i] not in ["--", "null", ""]:
                                 total_energy += extract_numeric(buy_power_list[i])
                         output["Grid Consumption Energy (Real-time)"] = total_energy
@@ -783,8 +788,8 @@ class FusionSolarAPI:
                     if "onGridPower" in day_info and isinstance(day_info["onGridPower"], list) and len(day_info["onGridPower"]) > 0:
                         ongrid_power_list = day_info["onGridPower"]
                         total_energy = 0.0
-                        idx = min(interval_index, len(ongrid_power_list) - 1, 287)
-                        for i in range(idx + 1):
+                        idx = min(last_completed_index, len(ongrid_power_list) - 1, 287)
+                        for i in range(max(idx + 1, 0)):
                             if ongrid_power_list[i] not in ["--", "null", ""]:
                                 total_energy += extract_numeric(ongrid_power_list[i])
                         output["Grid Injection Energy (Real-time)"] = total_energy
@@ -792,8 +797,8 @@ class FusionSolarAPI:
                     if "selfUsePower" in day_info and isinstance(day_info["selfUsePower"], list) and len(day_info["selfUsePower"]) > 0:
                         selfuse_power_list = day_info["selfUsePower"]
                         total_energy = 0.0
-                        idx = min(interval_index, len(selfuse_power_list) - 1, 287)
-                        for i in range(idx + 1):
+                        idx = min(last_completed_index, len(selfuse_power_list) - 1, 287)
+                        for i in range(max(idx + 1, 0)):
                             if selfuse_power_list[i] not in ["--", "null", ""]:
                                 total_energy += extract_numeric(selfuse_power_list[i])
                         output["Battery Consumption Energy (Real-time)"] = total_energy
@@ -801,8 +806,8 @@ class FusionSolarAPI:
                     if "chargePower" in day_info and isinstance(day_info["chargePower"], list) and len(day_info["chargePower"]) > 0:
                         charge_power_list = day_info["chargePower"]
                         total_energy = 0.0
-                        idx = min(interval_index, len(charge_power_list) - 1, 287)
-                        for i in range(idx + 1):
+                        idx = min(last_completed_index, len(charge_power_list) - 1, 287)
+                        for i in range(max(idx + 1, 0)):
                             if charge_power_list[i] not in ["--", "null", ""]:
                                 total_energy += extract_numeric(charge_power_list[i])
                         output["Battery Injection Energy (Real-time)"] = total_energy
