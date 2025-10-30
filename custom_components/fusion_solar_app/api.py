@@ -11,6 +11,7 @@ import base64
 from typing import Dict, Optional
 from urllib.parse import unquote, quote, urlparse, urlencode
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from dateutil.relativedelta import relativedelta
 from .const import DOMAIN, PUBKEY_URL, LOGIN_HEADERS_1_STEP_REFERER, LOGIN_HEADERS_2_STEP_REFERER, LOGIN_VALIDATE_USER_URL, LOGIN_FORM_URL, DATA_URL, STATION_LIST_URL, KEEP_ALIVE_URL, DATA_REFERER_URL, ENERGY_BALANCE_URL, LOGIN_DEFAULT_REDIRECT_URL, CAPTCHA_URL
 from .utils import extract_numeric, encrypt_password, generate_nonce
@@ -746,7 +747,8 @@ class FusionSolarAPI:
                     _LOGGER.info("Day info keys available: %s", list(day_info.keys()) if isinstance(day_info, dict) else "Not a dict")
                     
                     # Get current time index (5-minute intervals: 288 points per day)
-                    current_time = datetime.now()
+                    tz_name = "Europe/London" if self.session_cookie_name == 'dp-session' else "Asia/Singapore"
+                    current_time = datetime.now(ZoneInfo(tz_name))
                     minutes_since_midnight = current_time.hour * 60 + current_time.minute
                     interval_index = minutes_since_midnight // 5  # 5-minute intervals
                     
@@ -755,48 +757,53 @@ class FusionSolarAPI:
                         interval_index = 287  # Last interval of the day
                     
                     # Extract energy values from day interval data
-                    if "productPower" in day_info and len(day_info["productPower"]) > interval_index:
+                    if "productPower" in day_info and isinstance(day_info["productPower"], list) and len(day_info["productPower"]) > 0:
                         product_power_list = day_info["productPower"]
                         _LOGGER.info("Processing Solar Production - interval_index=%s, list_length=%s", interval_index, len(product_power_list))
                         # Sum up energy from midnight to current interval
                         total_energy = 0.0
-                        for i in range(interval_index + 1):
-                            if i < len(product_power_list) and product_power_list[i] not in ["--", "null", ""]:
+                        idx = min(interval_index, len(product_power_list) - 1, 287)
+                        for i in range(idx + 1):
+                            if product_power_list[i] not in ["--", "null", ""]:
                                 total_energy += extract_numeric(product_power_list[i])
                         output["Solar Production Energy (Real-time)"] = total_energy
                         _LOGGER.info("Solar Production Energy (Real-time) calculated: %s", total_energy)
                     
-                    if "buyPower" in day_info and len(day_info["buyPower"]) > interval_index:
+                    if "buyPower" in day_info and isinstance(day_info["buyPower"], list) and len(day_info["buyPower"]) > 0:
                         buy_power_list = day_info["buyPower"]
                         _LOGGER.info("Processing Grid Consumption - interval_index=%s, list_length=%s", interval_index, len(buy_power_list))
                         total_energy = 0.0
-                        for i in range(interval_index + 1):
-                            if i < len(buy_power_list) and buy_power_list[i] not in ["--", "null", ""]:
+                        idx = min(interval_index, len(buy_power_list) - 1, 287)
+                        for i in range(idx + 1):
+                            if buy_power_list[i] not in ["--", "null", ""]:
                                 total_energy += extract_numeric(buy_power_list[i])
                         output["Grid Consumption Energy (Real-time)"] = total_energy
                         _LOGGER.info("Grid Consumption Energy (Real-time) calculated: %s", total_energy)
                     
-                    if "onGridPower" in day_info and len(day_info["onGridPower"]) > interval_index:
+                    if "onGridPower" in day_info and isinstance(day_info["onGridPower"], list) and len(day_info["onGridPower"]) > 0:
                         ongrid_power_list = day_info["onGridPower"]
                         total_energy = 0.0
-                        for i in range(interval_index + 1):
-                            if i < len(ongrid_power_list) and ongrid_power_list[i] not in ["--", "null", ""]:
+                        idx = min(interval_index, len(ongrid_power_list) - 1, 287)
+                        for i in range(idx + 1):
+                            if ongrid_power_list[i] not in ["--", "null", ""]:
                                 total_energy += extract_numeric(ongrid_power_list[i])
                         output["Grid Injection Energy (Real-time)"] = total_energy
                     
-                    if "selfUsePower" in day_info and len(day_info["selfUsePower"]) > interval_index:
+                    if "selfUsePower" in day_info and isinstance(day_info["selfUsePower"], list) and len(day_info["selfUsePower"]) > 0:
                         selfuse_power_list = day_info["selfUsePower"]
                         total_energy = 0.0
-                        for i in range(interval_index + 1):
-                            if i < len(selfuse_power_list) and selfuse_power_list[i] not in ["--", "null", ""]:
+                        idx = min(interval_index, len(selfuse_power_list) - 1, 287)
+                        for i in range(idx + 1):
+                            if selfuse_power_list[i] not in ["--", "null", ""]:
                                 total_energy += extract_numeric(selfuse_power_list[i])
                         output["Battery Consumption Energy (Real-time)"] = total_energy
                     
-                    if "chargePower" in day_info and len(day_info["chargePower"]) > interval_index:
+                    if "chargePower" in day_info and isinstance(day_info["chargePower"], list) and len(day_info["chargePower"]) > 0:
                         charge_power_list = day_info["chargePower"]
                         total_energy = 0.0
-                        for i in range(interval_index + 1):
-                            if i < len(charge_power_list) and charge_power_list[i] not in ["--", "null", ""]:
+                        idx = min(interval_index, len(charge_power_list) - 1, 287)
+                        for i in range(idx + 1):
+                            if charge_power_list[i] not in ["--", "null", ""]:
                                 total_energy += extract_numeric(charge_power_list[i])
                         output["Battery Injection Energy (Real-time)"] = total_energy
                     
@@ -1094,7 +1101,12 @@ class FusionSolarAPI:
         _LOGGER.info("Session Status - Connected: %s, Cookie Name: %s, CSRF: %s", self.connected, self.session_cookie_name, self.csrf)
         _LOGGER.info("Session Cookies: %s", dict(self.session.cookies))
         
-        currentTime = datetime.now()
+        # Determine timezone to use for DAY computations and request params
+        timezone_offset = "0.0" if self.session_cookie_name == 'dp-session' else "8"
+        timezone_str = "Europe/London" if self.session_cookie_name == 'dp-session' else "Asia/Singapore"
+
+        # Use timezone-aware 'now' for consistent interval math and params
+        currentTime = datetime.now(ZoneInfo(timezone_str))
         timestampNow = currentTime.timestamp() * 1000
         current_day = currentTime.day
         current_month = currentTime.month
@@ -1115,15 +1127,19 @@ class FusionSolarAPI:
             dateStr = first_day_of_year.strftime("%Y-%m-%d %H:%M:%S")
         elif call_type == ENERGY_BALANCE_CALL_TYPE.DAY:
             if specific_date is not None:
-                specific_year = specific_date.year
-                specific_month = specific_date.month
-                specific_day = specific_date.day
-                current_day_of_year = datetime(specific_year, specific_month, specific_day)
+                # Convert provided date to station timezone midnight
+                day_start = datetime(
+                    specific_date.year,
+                    specific_date.month,
+                    specific_date.day,
+                    tzinfo=ZoneInfo(timezone_str)
+                ).replace(hour=0, minute=0, second=0, microsecond=0)
             else:
-                current_day_of_year = datetime(current_year, current_month, current_day)
-            
-            timestamp = current_day_of_year.timestamp() * 1000
-            dateStr = current_day_of_year.strftime("%Y-%m-%d %H:%M:%S")
+                # Station midnight today
+                day_start = currentTime.replace(hour=0, minute=0, second=0, microsecond=0)
+
+            timestamp = day_start.timestamp() * 1000
+            dateStr = day_start.strftime("%Y-%m-%d %H:%M:%S")
         else:
             timestamp = first_day_of_year.timestamp() * 1000
             dateStr = first_day_of_year.strftime("%Y-%m-%d %H:%M:%S")
@@ -1138,9 +1154,7 @@ class FusionSolarAPI:
             "Roarand": self.csrf
         }
 
-        # Use appropriate timezone based on auth system
-        timezone_offset = "0.0" if self.session_cookie_name == 'dp-session' else "8"
-        timezone_str = "Europe/London" if self.session_cookie_name == 'dp-session' else "Asia/Singapore"
+        # timezone_offset/timezone_str already computed above for consistency
 
         params = {
              "stationDn": unquote(self.station),
