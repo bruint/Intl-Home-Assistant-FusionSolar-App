@@ -1,36 +1,27 @@
-# Home Assistant FusionSolar App - International Support
+# Home Assistant FusionSolar App - SG5/INTL Support
 
-This is a fork of the original Home Assistant FusionSolar App integration with added support for **SG5 and International FusionSolar regions**.
+This is a simplified Home Assistant FusionSolar App integration with support for **SG5 and International FusionSolar regions**.
 
-## 🚀 New Features
+## Features
 
-### ✅ Dual Authentication System Support
-- **EU5 (New System)**: Uses `dp-session` cookie with `/rest/dpcloud/` endpoints
-- **SG5/INTL (Old System)**: Uses `bspsession` cookie with `/rest/neteco/` endpoints
-- **Automatic Detection**: The integration automatically detects which system to use
+### Authentication System
+- **SG5/INTL Support**: Uses `bspsession` cookie with `/rest/neteco/` endpoints
+- **Session Management**: Uses `requests.Session()` for proper cookie handling
+- **CSRF Token**: Uses `roarand` header for API requests
+- **Keep-Alive**: Implements events polling to maintain sessions
 
-### ✅ Enhanced Session Management
-- **Cookie Persistence**: Uses `requests.Session()` for proper cookie handling
-- **Dual CSRF Tokens**: Supports both `roarand` and `x-uni-crsf-token` for different endpoints
-- **Keep-Alive Mechanisms**: Implements profile and events polling to maintain sessions
-- **Dynamic User ID**: Automatically extracts user ID from custom settings endpoint
+### API Support
+- **Station List**: Station data retrieval
+- **Real-Time Power**: Current solar generation power in kW
 
-### ✅ Comprehensive API Support
-- **Station List**: Full station data retrieval
-- **Real-Time Power**: Current power and energy data
-- **Energy Flow**: Detailed power flow between components
-- **Energy Balance**: Historical data (daily/monthly/yearly/lifetime)
-- **Company Information**: Organization and company data
-
-## 🌍 Supported Regions
+## Supported Regions
 
 | Region | Host | Status | Auth System |
 |--------|------|--------|-------------|
-| EU5 | `eu5.fusionsolar.huawei.com` | ✅ Supported | New (`dp-session`) |
-| SG5 | `sg5.fusionsolar.huawei.com` | ✅ Supported | Old (`bspsession`) |
-| INTL | `intl.fusionsolar.huawei.com` | ✅ Supported | Old (`bspsession`) |
+| SG5 | `sg5.fusionsolar.huawei.com` | ✅ Supported | `bspsession` |
+| INTL | `intl.fusionsolar.huawei.com` | ✅ Supported | `bspsession` |
 
-## 📦 Installation
+## Installation
 
 ### Option 1: HACS (Recommended)
 1. Add this repository to HACS: `https://github.com/bruint/Intl-Home-Assistant-FusionSolar-App`
@@ -44,7 +35,7 @@ This is a fork of the original Home Assistant FusionSolar App integration with a
 3. Restart Home Assistant
 4. Add the integration via Configuration > Integrations
 
-## ⚙️ Configuration
+## Configuration
 
 1. Go to **Configuration** > **Integrations**
 2. Click **Add Integration** and search for "FusionSolar App"
@@ -52,31 +43,23 @@ This is a fork of the original Home Assistant FusionSolar App integration with a
    - **Username**: Your FusionSolar username
    - **Password**: Your FusionSolar password
    - **Login Host**: Choose your region:
-     - `eu5.fusionsolar.huawei.com` (Europe)
      - `sg5.fusionsolar.huawei.com` (Singapore)
      - `intl.fusionsolar.huawei.com` (International)
 4. Complete the setup
 
-## 🔧 Technical Details
+## Technical Details
 
 ### Authentication Flow
 1. **Login**: Authenticates with FusionSolar using RSA-OAEP encryption
 2. **Redirect Handling**: Follows redirects with proper cookie preservation
-3. **System Detection**: Automatically detects authentication system
-4. **Session Management**: Maintains session with dual keep-alive mechanisms
+3. **Session Management**: Maintains session with keep-alive mechanism
 
 ### API Endpoints
 - **Station List**: `/rest/pvms/web/station/v1/station/station-list`
 - **Energy Flow**: `/rest/pvms/web/station/v1/overview/energy-flow`
-- **Energy Balance**: `/rest/pvms/web/station/v1/overview/energy-balance`
-- **Real-Time KPI**: `/rest/pvms/web/station/v1/station/total-real-kpi`
-- **Company Info**: `/rest/neteco/web/organization/v2/company/current`
+- **Keep-Alive**: `/rest/sysfenw/v1/events`
 
-### Keep-Alive Mechanisms
-- **Profile Keep-Alive**: `/febs/21.40.38/users/{userId}/profile`
-- **Events Keep-Alive**: `/rest/sysfenw/v1/events`
-
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 1. **Login Failed**: Verify your credentials and region host
@@ -91,36 +74,24 @@ logger:
     custom_components.fusion_solar_app: debug
 ```
 
-## 📊 Sensors
+## Sensors
 
-The integration provides comprehensive energy monitoring sensors:
+The integration provides a single sensor for solar generation monitoring:
 
-### Power Sensors (kW)
-- Panel Production Power
-- House Load Power
-- Battery Consumption/Injection Power
-- Grid Consumption/Injection Power
+### Power Sensor (kW)
+- **Panel Production Power**: Current solar generation power in kilowatts
 
-### Energy Sensors (kWh)
-- Daily, Weekly, Monthly, Yearly, Lifetime energy data
-- Panel production and consumption
-- Battery charge/discharge
-- Grid import/export
+This simplified sensor provides the foundation for building more extensive Home Assistant energy capabilities in the future.
 
-### Status Sensors
-- Battery Percentage
-- Battery Capacity
-- Last Authentication Time
+## Contributing
 
-## 🤝 Contributing
+Contributions are welcome!
 
-This fork adds international support to the original integration. Contributions are welcome!
-
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - Original integration by [hcraveiro](https://github.com/hcraveiro/Home-Assistant-FusionSolar-App)
 - Enhanced with SG5/INTL support by [bruint](https://github.com/bruint)

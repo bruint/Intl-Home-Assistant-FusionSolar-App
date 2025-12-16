@@ -9,11 +9,9 @@ import requests
 import json
 import base64
 from typing import Dict, Optional
-from urllib.parse import unquote, quote, urlparse, urlencode
+from urllib.parse import unquote, urlparse
 from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
-from dateutil.relativedelta import relativedelta
-from .const import DOMAIN, PUBKEY_URL, LOGIN_HEADERS_1_STEP_REFERER, LOGIN_HEADERS_2_STEP_REFERER, LOGIN_VALIDATE_USER_URL, LOGIN_FORM_URL, DATA_URL, STATION_LIST_URL, KEEP_ALIVE_URL, DATA_REFERER_URL, ENERGY_BALANCE_URL, LOGIN_DEFAULT_REDIRECT_URL, CAPTCHA_URL
+from .const import DOMAIN, PUBKEY_URL, LOGIN_HEADERS_1_STEP_REFERER, LOGIN_HEADERS_2_STEP_REFERER, LOGIN_VALIDATE_USER_URL, LOGIN_FORM_URL, STATION_LIST_URL, KEEP_ALIVE_URL, CAPTCHA_URL
 from .utils import extract_numeric, encrypt_password, generate_nonce
 
 # CAPTCHA solver disabled - manual input only
@@ -31,68 +29,8 @@ class DeviceType(StrEnum):
     SENSOR_PERCENTAGE = "sensor_percentage"
     SENSOR_TIME = "sensor_time"
 
-class ENERGY_BALANCE_CALL_TYPE(StrEnum):
-    """Device types."""
-
-    DAY = "2"
-    PREVIOUS_MONTH = "3"
-    MONTH = "4"
-    YEAR = "5"
-    LIFETIME = "6"
-
 DEVICES = [
-    {"id": "House Load Power", "type": DeviceType.SENSOR_KW, "icon": "mdi:home-lightning-bolt-outline"},
-    {"id": "House Load Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:home-lightning-bolt-outline"},
-    {"id": "House Load Week", "type": DeviceType.SENSOR_KWH, "icon": "mdi:home-lightning-bolt-outline"},
-    {"id": "House Load Month", "type": DeviceType.SENSOR_KWH, "icon": "mdi:home-lightning-bolt-outline"},
-    {"id": "House Load Year", "type": DeviceType.SENSOR_KWH, "icon": "mdi:home-lightning-bolt-outline"},
-    {"id": "House Load Lifetime", "type": DeviceType.SENSOR_KWH, "icon": "mdi:home-lightning-bolt-outline"},
     {"id": "Panel Production Power", "type": DeviceType.SENSOR_KW, "icon": "mdi:solar-panel"},
-    {"id": "Panel Production Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
-    {"id": "Panel Production Week", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
-    {"id": "Panel Production Week", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
-    {"id": "Panel Production Month", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
-    {"id": "Panel Production Year", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
-    {"id": "Panel Production Lifetime", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
-    {"id": "Panel Production Consumption Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
-    {"id": "Panel Production Consumption Week", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
-    {"id": "Panel Production Consumption Month", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
-    {"id": "Panel Production Consumption Year", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
-    {"id": "Panel Production Consumption Lifetime", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
-    {"id": "Battery Consumption Power", "type": DeviceType.SENSOR_KW, "icon": "mdi:battery-charging-100"},
-    {"id": "Battery Consumption Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging-100"},
-    {"id": "Battery Consumption Week", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging-100"},
-    {"id": "Battery Consumption Month", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging-100"},
-    {"id": "Battery Consumption Year", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging-100"},
-    {"id": "Battery Consumption Lifetime", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging-100"},
-    {"id": "Battery Injection Power", "type": DeviceType.SENSOR_KW, "icon": "mdi:battery-charging"},
-    {"id": "Battery Injection Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging"},
-    {"id": "Battery Injection Week", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging"},
-    {"id": "Battery Injection Month", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging"},
-    {"id": "Battery Injection Year", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging"},
-    {"id": "Battery Injection Lifetime", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging"},
-    {"id": "Grid Consumption Power", "type": DeviceType.SENSOR_KW, "icon": "mdi:transmission-tower-export"},
-    {"id": "Grid Consumption Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-export"},
-    {"id": "Grid Consumption Week", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-export"},
-    {"id": "Grid Consumption Month", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-export"},
-    {"id": "Grid Consumption Year", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-export"},
-    {"id": "Grid Consumption Lifetime", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-export"},
-    {"id": "Grid Injection Power", "type": DeviceType.SENSOR_KW, "icon": "mdi:transmission-tower-import"},
-    {"id": "Grid Injection Today", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-import"},
-    {"id": "Grid Injection Week", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-import"},
-    {"id": "Grid Injection Month", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-import"},
-    {"id": "Grid Injection Year", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-import"},
-    {"id": "Grid Injection Lifetime", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-import"},
-    {"id": "Battery Percentage", "type": DeviceType.SENSOR_PERCENTAGE, "icon": ""},
-    {"id": "Battery Capacity", "type": DeviceType.SENSOR_KW, "icon": "mdi:home-lightning-bolt-outline"},
-    {"id": "Last Authentication Time", "type": DeviceType.SENSOR_TIME, "icon": "mdi:clock-outline"},
-    
-    # Real-time interval energy sensors for Energy Dashboard
-    {"id": "Solar Production Energy (Real-time)", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
-    {"id": "Grid Consumption Energy (Real-time)", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-export"},
-    {"id": "Grid Injection Energy (Real-time)", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-import"},
-    {"id": "Battery Consumption Energy (Real-time)", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging-100"},
-    {"id": "Battery Injection Energy (Real-time)", "type": DeviceType.SENSOR_KWH, "icon": "mdi:battery-charging"},
 ]
 
 @dataclass
@@ -107,38 +45,6 @@ class Device:
     icon: str
 
 
-class PowerIntegrator:
-    """Class to integrate power over time for real-time energy calculations."""
-    
-    def __init__(self):
-        self.last_update: datetime | None = None
-        self.last_power: float = 0.0
-        self.accumulated_energy: float = 0.0
-        self.day_start: datetime | None = None
-    
-    def update(self, power: float, current_time: datetime) -> float:
-        """Update the integrator with new power reading and return accumulated energy."""
-        # Reset at midnight
-        if self.day_start is None or current_time.date() != self.day_start.date():
-            self.day_start = current_time.replace(hour=0, minute=0, second=0, microsecond=0)
-            self.accumulated_energy = 0.0
-            self.last_update = None
-        
-        # Calculate energy since last update using trapezoidal rule
-        if self.last_update is not None:
-            time_diff_hours = (current_time - self.last_update).total_seconds() / 3600
-            # Average power over the interval
-            avg_power = (power + self.last_power) / 2
-            energy_increment = avg_power * time_diff_hours
-            self.accumulated_energy += energy_increment
-        
-        # Update state
-        self.last_update = current_time
-        self.last_power = power
-        
-        return self.accumulated_energy
-
-
 class FusionSolarAPI:
     """Class for Fusion Solar App API."""
 
@@ -149,33 +55,21 @@ class FusionSolarAPI:
         self.captcha_input = captcha_input
         self.captcha_img = None
         self.station = None
-        self.battery_capacity = None
         self.login_host = login_host
         self.data_host = None
-        self.dp_session = ""
-        self.bspsession = ""  # For old auth system (sg5/intl)
-        self.session_cookie_name = ""  # Will be set to 'dp-session' or 'bspsession'
+        self.bspsession = ""  # Session cookie for sg5/intl
         self.connected: bool = False
         self.last_session_time: datetime | None = None
         self._session_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self.csrf = None
         self.csrf_time = None
-        self.uni_csrf = None  # For keep-alive endpoints
-        self.uni_csrf_time = None
         self.user_id = None  # Dynamic user ID
         self.session = requests.Session()  # Use session for cookie persistence
         
         # CAPTCHA solver disabled - use manual input only
         self.captcha_solver = None
         _LOGGER.info("CAPTCHA solver disabled - using manual input only")
-        
-        # Power integrators for real-time energy calculation
-        self.solar_integrator = PowerIntegrator()
-        self.grid_consumption_integrator = PowerIntegrator()
-        self.grid_injection_integrator = PowerIntegrator()
-        self.battery_consumption_integrator = PowerIntegrator()
-        self.battery_injection_integrator = PowerIntegrator()
 
     @property
     def controller_name(self) -> str:
@@ -305,23 +199,17 @@ class FusionSolarAPI:
             _LOGGER.debug("Data host: %s", self.data_host)
 
             if redirect_response.status_code == 200:
-                # Check for session cookies in the session object
+                # Check for bspsession cookie
                 session_cookie = None
-                session_cookie_name = None
                 
                 for cookie in self.session.cookies:
-                    if cookie.name in ['dp-session', 'bspsession']:
+                    if cookie.name == 'bspsession':
                         session_cookie = cookie.value
-                        session_cookie_name = cookie.name
                         break
                 
                 if session_cookie:
-                    _LOGGER.debug("Found %s Cookie: %s", session_cookie_name, session_cookie)
-                    self.session_cookie_name = session_cookie_name
-                    if session_cookie_name == 'dp-session':
-                        self.dp_session = session_cookie
-                    else:
-                        self.bspsession = session_cookie
+                    _LOGGER.debug("Found bspsession Cookie: %s", session_cookie)
+                    self.bspsession = session_cookie
                     
                     self.connected = True
                     self.last_session_time = datetime.now(timezone.utc)
@@ -333,8 +221,6 @@ class FusionSolarAPI:
                     station_data = self.get_station_list()
                     if station_data and "data" in station_data and "list" in station_data["data"] and len(station_data["data"]["list"]) > 0:
                         self.station = station_data["data"]["list"][0]["dn"]
-                        if self.battery_capacity is None or self.battery_capacity == 0.0:
-                            self.battery_capacity = station_data["data"]["list"][0]["batteryCapacity"]
                         _LOGGER.info("Station set to: %s", self.station)
                     else:
                         _LOGGER.error("Failed to get station data from API response: %s", station_data)
@@ -343,10 +229,10 @@ class FusionSolarAPI:
                     self._start_session_monitor()
                     return True
                 else:
-                    _LOGGER.error("No session cookie found in cookies.")
+                    _LOGGER.error("No bspsession cookie found in cookies.")
                     _LOGGER.debug("Available cookies: %s", [c.name for c in self.session.cookies])
                     self.connected = False
-                    raise APIAuthError("No session cookie found in cookies.")
+                    raise APIAuthError("No bspsession cookie found in cookies.")
             else:
                 _LOGGER.error("Redirect failed: %s", redirect_response.status_code)
                 _LOGGER.error("%s", redirect_response.text)
@@ -412,122 +298,36 @@ class FusionSolarAPI:
                      self.csrf, datetime.now() - self.csrf_time if self.csrf_time else "Never")
         
         if self.csrf is None or datetime.now() - self.csrf_time > timedelta(minutes=5):
-            _LOGGER.info("CSRF token needs refresh - trying keep-alive endpoints")
-            # Try different keep-alive endpoints based on auth system
-            endpoints = [
-                f"https://{self.data_host}/rest/dpcloud/auth/v1/keep-alive",
-                f"https://{self.data_host}/rest/neteco/auth/v1/keep-alive", 
-                f"https://{self.data_host}/unisess/v1/auth/session"
-            ]
+            _LOGGER.info("CSRF token needs refresh")
+            endpoint = f"https://{self.data_host}/rest/neteco/auth/v1/keep-alive"
             
-            for endpoint in endpoints:
-                try:
-                    headers = {
-                        "accept": "application/json, text/plain, */*",
-                        "accept-encoding": "gzip, deflate, br, zstd",
-                        "Referer": f"https://{self.data_host}/pvmswebsite/assets/build/index.html"
-                    }
-                    
-                    _LOGGER.debug("Getting CSRF at: %s", endpoint)
-                    response = self.session.get(endpoint, headers=headers)
-                    
-                    if response.status_code == 200:
-                        data = response.json()
-                        if 'payload' in data:
-                            self.csrf = data['payload']
-                            self.csrf_time = datetime.now()
-                            _LOGGER.debug(f"CSRF refreshed: {self.csrf}")
-                            return
-                        elif 'csrfToken' in data:
-                            self.csrf = data['csrfToken']
-                            self.csrf_time = datetime.now()
-                            _LOGGER.info("CSRF refreshed successfully: %s", self.csrf)
-                            return
-                except Exception as e:
-                    _LOGGER.debug("CSRF endpoint %s failed: %s", endpoint, e)
-                    continue
-            
-            _LOGGER.warning("Could not refresh CSRF token from any endpoint")
-    
-    def refresh_uni_csrf(self):
-        """Refresh UNI CSRF token (x-uni-crsf-token) for keep-alive endpoints"""
-        if self.uni_csrf is None or datetime.now() - self.uni_csrf_time > timedelta(minutes=5):
-            # Try different endpoints that might return the uni CSRF token
-            endpoints = [
-                f"https://{self.data_host}/febs/21.40.38/users/profile",
-                f"https://{self.data_host}/rest/sysfenw/v1/events",
-                f"https://{self.data_host}/unisess/v1/auth/session"
-            ]
-            
-            for endpoint in endpoints:
-                try:
-                    response = self.session.get(endpoint)
-                    if response.status_code == 200:
-                        # Check response headers for CSRF token
-                        csrf_header = response.headers.get('x-uni-crsf-token') or response.headers.get('X-Uni-Crsf-Token')
-                        if csrf_header:
-                            self.uni_csrf = csrf_header
-                            self.uni_csrf_time = datetime.now()
-                            _LOGGER.debug(f"UNI CSRF refreshed: {self.uni_csrf}")
-                            return
-                        
-                        # Check response body
-                        try:
-                            data = response.json()
-                            if 'csrfToken' in data:
-                                self.uni_csrf = data['csrfToken']
-                                self.uni_csrf_time = datetime.now()
-                                _LOGGER.debug(f"UNI CSRF refreshed: {self.uni_csrf}")
-                                return
-                        except:
-                            pass
-                except Exception as e:
-                    _LOGGER.debug("UNI CSRF endpoint %s failed: %s", endpoint, e)
-                    continue
-            
-            _LOGGER.warning("Could not refresh UNI CSRF token from any endpoint")
+            try:
+                headers = {
+                    "accept": "application/json, text/plain, */*",
+                    "accept-encoding": "gzip, deflate, br, zstd",
+                    "Referer": f"https://{self.data_host}/pvmswebsite/assets/build/index.html"
+                }
+                
+                _LOGGER.debug("Getting CSRF at: %s", endpoint)
+                response = self.session.get(endpoint, headers=headers)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if 'payload' in data:
+                        self.csrf = data['payload']
+                        self.csrf_time = datetime.now()
+                        _LOGGER.debug(f"CSRF refreshed: {self.csrf}")
+                        return
+                    elif 'csrfToken' in data:
+                        self.csrf = data['csrfToken']
+                        self.csrf_time = datetime.now()
+                        _LOGGER.info("CSRF refreshed successfully: %s", self.csrf)
+                        return
+            except Exception as e:
+                _LOGGER.warning("Could not refresh CSRF token: %s", e)
     
     def _keep_alive_session(self):
-        """Implement both keep-alive mechanisms"""
-        if not self.user_id:
-            _LOGGER.warning("No user ID available for keep-alive")
-            return False
-        
-        self.refresh_uni_csrf()
-        if not self.uni_csrf:
-            _LOGGER.warning("No UNI CSRF token available for keep-alive")
-            return False
-        
-        success_count = 0
-        
-        # 1. User Profile Keep-Alive
-        try:
-            profile_url = f"https://{self.data_host}/febs/21.40.38/users/{self.user_id}/profile"
-            headers = {
-                'accept': 'application/json',
-                'accept-language': 'en-GB,en;q=0.7',
-                'cache-control': 'no-cache',
-                'origin': f'https://{self.data_host}',
-                'pragma': 'no-cache',
-                'referer': f'https://{self.data_host}/pvmswebsite/assets/build/index.html',
-                'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
-                'x-non-renewal-session': 'true',
-                'x-requested-with': 'XMLHttpRequest',
-                'x-uni-crsf-token': self.uni_csrf,
-                'x-user-id': str(self.user_id)
-            }
-            
-            response = self.session.get(profile_url, headers=headers)
-            if response.status_code == 200:
-                _LOGGER.debug("Profile Keep-Alive: SUCCESS")
-                success_count += 1
-            else:
-                _LOGGER.warning("Profile Keep-Alive failed: %s", response.status_code)
-                
-        except Exception as e:
-            _LOGGER.error("Profile Keep-Alive Error: %s", e)
-        
-        # 2. System Events Keep-Alive
+        """Keep session alive using events endpoint"""
         try:
             events_url = f"https://{self.data_host}/rest/sysfenw/v1/events"
             params = {
@@ -550,16 +350,15 @@ class FusionSolarAPI:
             
             response = self.session.get(events_url, headers=headers, params=params)
             if response.status_code == 200:
-                _LOGGER.debug("Events Keep-Alive: SUCCESS")
-                success_count += 1
+                _LOGGER.debug("Keep-Alive: SUCCESS")
+                return True
             else:
-                _LOGGER.warning("Events Keep-Alive failed: %s", response.status_code)
+                _LOGGER.warning("Keep-Alive failed: %s", response.status_code)
+                return False
                 
         except Exception as e:
-            _LOGGER.error("Events Keep-Alive Error: %s", e)
-        
-        _LOGGER.debug("Keep-Alive Summary: %d/2 successful", success_count)
-        return success_count > 0
+            _LOGGER.error("Keep-Alive Error: %s", e)
+            return False
     
     def get_station_id(self):
         return self.get_station_list()["data"]["list"][0]["dn"]
@@ -590,8 +389,8 @@ class FusionSolarAPI:
         if self.csrf:
             station_headers["roarand"] = self.csrf
         
-        # Use appropriate timezone based on auth system
-        timezone_offset = 2 if self.session_cookie_name == 'dp-session' else 8
+        # Use SG5/INTL timezone (Asia/Singapore)
+        timezone_offset = 8
         
         station_payload = {
             "curPage": 1,
@@ -611,6 +410,7 @@ class FusionSolarAPI:
         return json_response
 
     def get_devices(self) -> list[Device]:
+        """Get devices - only returns Panel Production Power sensor."""
         self.refresh_csrf()
 
         headers = {
@@ -620,7 +420,6 @@ class FusionSolarAPI:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         }
         
-        # Fusion Solar App Station parameter
         if self.station is None:
             _LOGGER.error("Station not set. Cannot get devices without station information.")
             return []
@@ -633,49 +432,6 @@ class FusionSolarAPI:
 
         output = {
             "panel_production_power": 0.0,
-            "panel_production_today": 0.0,
-            "panel_production_week": 0.0,
-            "panel_production_month": 0.0,
-            "panel_production_year": 0.0,
-            "panel_production_lifetime": 0.0,
-            "panel_production_consumption_today": 0.0,
-            "panel_production_consumption_week": 0.0,
-            "panel_production_consumption_month": 0.0,
-            "panel_production_consumption_year": 0.0,
-            "panel_production_consumption_lifetime": 0.0,
-            "house_load_power": 0.0,
-            "house_load_today": 0.0,
-            "house_load_week": 0.0,
-            "house_load_month": 0.0,
-            "house_load_year": 0.0,
-            "house_load_lifetime": 0.0,
-            "grid_consumption_power": 0.0,
-            "grid_consumption_today": 0.0,
-            "grid_consumption_week": 0.0,
-            "grid_consumption_month": 0.0,
-            "grid_consumption_year": 0.0,
-            "grid_consumption_lifetime": 0.0,
-            "grid_injection_power": 0.0,
-            "grid_injection_today": 0.0,
-            "grid_injection_week": 0.0,
-            "grid_injection_month": 0.0,
-            "grid_injection_year": 0.0,
-            "grid_injection_lifetime": 0.0,
-            "battery_injection_power": 0.0,
-            "battery_injection_today": 0.0,
-            "battery_injection_week": 0.0,
-            "battery_injection_month": 0.0,
-            "battery_injection_year": 0.0,
-            "battery_injection_lifetime": 0.0,
-            "battery_consumption_power": 0.0,
-            "battery_consumption_today": 0.0,
-            "battery_consumption_week": 0.0,
-            "battery_consumption_month": 0.0,
-            "battery_consumption_year": 0.0,
-            "battery_consumption_lifetime": 0.0,
-            "battery_percentage": 0.0,
-            "battery_capacity": 0.0,
-            "exit_code": "SUCCESS",
         }
 
         if response.status_code == 200:
@@ -683,164 +439,25 @@ class FusionSolarAPI:
                 data = response.json()
                 _LOGGER.debug("Get Data Response: %s", data)
             except Exception as ex:
-                _LOGGER.error("Error processing response: JSON format invalid!\r\nCookies: %s\r\nHeader: %s\r\n%s", cookies, headers, response.text)
-                raise APIAuthError("Error processing response: JSON format invalid!\r\nCookies: %s\r\nHeader: %s\r\n%s", cookies, headers, response.text)
+                _LOGGER.error("Error processing response: JSON format invalid! %s", response.text)
+                raise APIAuthError("Error processing response: JSON format invalid! %s", response.text)
 
             if "data" not in data or "flow" not in data["data"]:
                 _LOGGER.error("Error on data structure!")
                 raise APIDataStructureError("Error on data structure!")
 
-            # Process nodes to gather required information
+            # Extract panel production power from nodes
             flow_data_nodes = data["data"]["flow"].get("nodes", [])
-            flow_data_links = data["data"]["flow"].get("links", [])
-            node_map = {
-                "neteco.pvms.energy.flow.buy.power": "grid_consumption_power",
-                "neteco.pvms.devTypeLangKey.string": "panel_production_power",
-                "neteco.pvms.devTypeLangKey.energy_store": "battery_injection_power",
-                "neteco.pvms.KPI.kpiView.electricalLoad": "house_load_power",
-            }
-        
+            
             for node in flow_data_nodes:
                 label = node.get("name", "")
                 value = node.get("description", {}).get("value", "")
                 
-                if label == "neteco.pvms.devTypeLangKey.energy_store":
-                    soc = extract_numeric(node.get("deviceTips", {}).get("SOC", ""))
-                    if soc is not None:
-                        output["battery_percentage"] = soc
-                    
-                    battery_power = extract_numeric(node.get("deviceTips", {}).get("BATTERY_POWER", ""))
-                    if battery_power is None or battery_power <= 0:
-                        output["battery_consumption_power"] = extract_numeric(value)
-                        output["battery_injection_power"] = 0.0
-                    else:
-                        output[node_map[label]] = extract_numeric(value)
-                        output["battery_consumption_power"] = 0.0
-                else:
-                    if label in node_map:
-                        output[node_map[label]] = extract_numeric(value)
-        
-            for node in flow_data_links:
-                label = node.get("description", {}).get("label", "")
-                value = node.get("description", {}).get("value", "")
-                if label in node_map:
-                    if label == "neteco.pvms.energy.flow.buy.power":
-                        grid_consumption_injection = extract_numeric(value)
-                        if (output["panel_production_power"] + output["battery_consumption_power"] - output["battery_injection_power"] - output["house_load_power"]) > 0:
-                            output["grid_injection_power"] = grid_consumption_injection
-                            output["grid_consumption_power"] = 0.0
-                        else:
-                            output["grid_consumption_power"] = grid_consumption_injection
-                            output["grid_injection_power"] = 0.0
+                if label == "neteco.pvms.devTypeLangKey.string":
+                    output["panel_production_power"] = extract_numeric(value) or 0.0
+                    break
 
-            self.update_output_with_battery_capacity(output)
-            self.update_output_with_energy_balance(output)
-            
-            # Calculate real-time energy using day interval data (5-minute intervals)
-            try:
-                _LOGGER.info("Attempting to get day interval data for real-time energy calculation")
-                day_data = self.call_energy_balance(ENERGY_BALANCE_CALL_TYPE.DAY)
-                _LOGGER.info("Day data received: success=%s, has_data=%s", day_data.get("success"), "data" in day_data)
-                
-                if day_data.get("success") and "data" in day_data:
-                    day_info = day_data["data"]
-                    _LOGGER.info("Day info keys available: %s", list(day_info.keys()) if isinstance(day_info, dict) else "Not a dict")
-                    
-                    # Get current time index (5-minute intervals: 288 points per day)
-                    tz_name = "Europe/London" if self.session_cookie_name == 'dp-session' else "Asia/Singapore"
-                    current_time = datetime.now(ZoneInfo(tz_name))
-                    minutes_since_midnight = current_time.hour * 60 + current_time.minute
-                    # Number of completed 5-min intervals since midnight (exclusive of current partial interval)
-                    completed_intervals = minutes_since_midnight // 5
-                    # We sum inclusive indices [0..last_completed_index]; if none completed, last_completed_index = -1
-                    last_completed_index = min(max(completed_intervals - 1, -1), 287)
-                    _LOGGER.info(
-                        "Day interval indexing: minutes_since_midnight=%s completed_intervals=%s last_completed_index=%s",
-                        minutes_since_midnight,
-                        completed_intervals,
-                        last_completed_index,
-                    )
-                    
-                    # Extract energy values from day interval data
-                    if "productPower" in day_info and isinstance(day_info["productPower"], list) and len(day_info["productPower"]) > 0:
-                        product_power_list = day_info["productPower"]
-                        _LOGGER.info("Processing Solar Production - last_completed_index=%s, list_length=%s", last_completed_index, len(product_power_list))
-                        # Sum up energy from midnight to current interval
-                        total_energy = 0.0
-                        idx = min(last_completed_index, len(product_power_list) - 1, 287)
-                        for i in range(max(idx + 1, 0)):
-                            if product_power_list[i] not in ["--", "null", ""]:
-                                total_energy += extract_numeric(product_power_list[i])
-                        output["Solar Production Energy (Real-time)"] = total_energy
-                        _LOGGER.info("Solar Production Energy (Real-time) calculated: %s", total_energy)
-                    
-                    if "buyPower" in day_info and isinstance(day_info["buyPower"], list) and len(day_info["buyPower"]) > 0:
-                        buy_power_list = day_info["buyPower"]
-                        _LOGGER.info("Processing Grid Consumption - last_completed_index=%s, list_length=%s", last_completed_index, len(buy_power_list))
-                        total_energy = 0.0
-                        idx = min(last_completed_index, len(buy_power_list) - 1, 287)
-                        for i in range(max(idx + 1, 0)):
-                            if buy_power_list[i] not in ["--", "null", ""]:
-                                total_energy += extract_numeric(buy_power_list[i])
-                        output["Grid Consumption Energy (Real-time)"] = total_energy
-                        _LOGGER.info("Grid Consumption Energy (Real-time) calculated: %s", total_energy)
-                    
-                    if "onGridPower" in day_info and isinstance(day_info["onGridPower"], list) and len(day_info["onGridPower"]) > 0:
-                        ongrid_power_list = day_info["onGridPower"]
-                        total_energy = 0.0
-                        idx = min(last_completed_index, len(ongrid_power_list) - 1, 287)
-                        for i in range(max(idx + 1, 0)):
-                            if ongrid_power_list[i] not in ["--", "null", ""]:
-                                total_energy += extract_numeric(ongrid_power_list[i])
-                        output["Grid Injection Energy (Real-time)"] = total_energy
-                    
-                    if "selfUsePower" in day_info and isinstance(day_info["selfUsePower"], list) and len(day_info["selfUsePower"]) > 0:
-                        selfuse_power_list = day_info["selfUsePower"]
-                        total_energy = 0.0
-                        idx = min(last_completed_index, len(selfuse_power_list) - 1, 287)
-                        for i in range(max(idx + 1, 0)):
-                            if selfuse_power_list[i] not in ["--", "null", ""]:
-                                total_energy += extract_numeric(selfuse_power_list[i])
-                        output["Battery Consumption Energy (Real-time)"] = total_energy
-                    
-                    if "chargePower" in day_info and isinstance(day_info["chargePower"], list) and len(day_info["chargePower"]) > 0:
-                        charge_power_list = day_info["chargePower"]
-                        total_energy = 0.0
-                        idx = min(last_completed_index, len(charge_power_list) - 1, 287)
-                        for i in range(max(idx + 1, 0)):
-                            if charge_power_list[i] not in ["--", "null", ""]:
-                                total_energy += extract_numeric(charge_power_list[i])
-                        output["Battery Injection Energy (Real-time)"] = total_energy
-                    
-                    _LOGGER.debug("Real-time energy from day intervals: solar=%s, grid_cons=%s, grid_inj=%s", 
-                                 output["Solar Production Energy (Real-time)"],
-                                 output["Grid Consumption Energy (Real-time)"],
-                                 output["Grid Injection Energy (Real-time)"])
-                else:
-                    _LOGGER.warning("Day interval data not available, using power integration fallback")
-                    # Fallback to power integration if day data fails
-                    current_time = datetime.now()
-                    output["Solar Production Energy (Real-time)"] = self.solar_integrator.update(output["panel_production_power"], current_time)
-                    output["Grid Consumption Energy (Real-time)"] = self.grid_consumption_integrator.update(output["grid_consumption_power"], current_time)
-                    output["Grid Injection Energy (Real-time)"] = self.grid_injection_integrator.update(output["grid_injection_power"], current_time)
-                    output["Battery Consumption Energy (Real-time)"] = self.battery_consumption_integrator.update(output["battery_consumption_power"], current_time)
-                    output["Battery Injection Energy (Real-time)"] = self.battery_injection_integrator.update(output["battery_injection_power"], current_time)
-            except Exception as e:
-                _LOGGER.error("Error getting day interval data: %s", e)
-                _LOGGER.error("Exception type: %s", type(e).__name__)
-                _LOGGER.error("Exception details: %s", str(e))
-                import traceback
-                _LOGGER.error("Full traceback: %s", traceback.format_exc())
-                # Fallback to power integration
-                current_time = datetime.now()
-                output["Solar Production Energy (Real-time)"] = self.solar_integrator.update(output["panel_production_power"], current_time)
-                output["Grid Consumption Energy (Real-time)"] = self.grid_consumption_integrator.update(output["grid_consumption_power"], current_time)
-                output["Grid Injection Energy (Real-time)"] = self.grid_injection_integrator.update(output["grid_injection_power"], current_time)
-                output["Battery Consumption Energy (Real-time)"] = self.battery_consumption_integrator.update(output["battery_consumption_power"], current_time)
-                output["Battery Injection Energy (Real-time)"] = self.battery_injection_integrator.update(output["battery_injection_power"], current_time)
-
-            output["exit_code"] = "SUCCESS"
-            _LOGGER.debug("output JSON: %s", output)
+            _LOGGER.debug("Panel Production Power: %s kW", output["panel_production_power"])
         else:
             _LOGGER.error("Error on data structure! %s", response.text)
             raise APIDataStructureError("Error on data structure! %s", response.text)
@@ -860,364 +477,6 @@ class FusionSolarAPI:
             for device in DEVICES
         ]
 
-    def update_output_with_battery_capacity(self, output: Dict[str, Optional[float | str]]):
-        if self.battery_capacity is None or self.battery_capacity == 0.0:
-            _LOGGER.debug("Getting Battery capacity")
-            self.refresh_csrf()
-            station_list = self.get_station_list()
-            station_data = station_list["data"]["list"][0]
-            output["battery_capacity"] = station_data["batteryCapacity"]
-            self.battery_capacity = station_data["batteryCapacity"]
-        else:
-            output["battery_capacity"] = self.battery_capacity
-    
-    def update_output_with_energy_balance(self, output: Dict[str, Optional[float | str]]):
-        self.refresh_csrf()
-        
-        # Month energy sensors
-        _LOGGER.debug("Getting Month's energy data")
-        month_data = self.call_energy_balance(ENERGY_BALANCE_CALL_TYPE.MONTH)
-        output["panel_production_month"] = extract_numeric(month_data["data"]["totalProductPower"])
-        output["panel_production_consumption_month"] = extract_numeric(month_data["data"]["totalSelfUsePower"])
-        output["grid_injection_month"] = extract_numeric(month_data["data"]["totalOnGridPower"])
-        output["grid_consumption_month"] = extract_numeric(month_data["data"]["totalBuyPower"])
-        
-        month_charge_power_list = month_data["data"]["chargePower"]
-        if month_charge_power_list:
-            month_total_charge_power = sum(extract_numeric(value) for value in month_charge_power_list if (value != "--" and value != "null"))
-            output["battery_injection_month"] = month_total_charge_power
-        
-        month_discharge_power_list = month_data["data"]["dischargePower"]
-        if month_discharge_power_list:
-            month_total_discharge_power = sum(extract_numeric(value) for value in month_discharge_power_list if (value != "--" and value != "null"))
-            output["battery_consumption_month"] = month_total_discharge_power
-
-        # Today energy sensors - Use real-time KPI data instead of monthly arrays
-        _LOGGER.debug("Getting Today's energy data from real-time KPI")
-        try:
-            # Get real-time KPI data for today's values
-            kpi_url = f"https://{self.data_host}/rest/pvms/web/station/v1/station/total-real-kpi"
-            kpi_params = {
-                "queryTime": int(time.time() * 1000),
-                "timeZone": 1 if self.session_cookie_name == 'dp-session' else 8,
-                "_": int(time.time() * 1000)
-            }
-            kpi_headers = {
-                "accept": "application/json, text/javascript, */*; q=0.01",
-                "accept-language": "en-GB,en;q=0.7",
-                "cache-control": "no-cache",
-                "origin": f"https://{self.data_host}",
-                "pragma": "no-cache",
-                "referer": f"https://{self.data_host}/pvmswebsite/assets/build/index.html",
-                "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
-                "x-non-renewal-session": "true",
-                "x-requested-with": "XMLHttpRequest"
-            }
-            
-            # Add CSRF token if available
-            if self.csrf:
-                kpi_headers["roarand"] = self.csrf
-            
-            kpi_response = self.session.get(kpi_url, headers=kpi_headers, params=kpi_params)
-            _LOGGER.debug("KPI Response status: %s", kpi_response.status_code)
-            if kpi_response.status_code == 200:
-                kpi_data = kpi_response.json()
-                _LOGGER.debug("KPI Response data: %s", kpi_data)
-                if kpi_data.get("success") and "data" in kpi_data:
-                    kpi_info = kpi_data["data"]
-                    
-                    # Use real-time KPI data for today's values
-                    daily_energy = kpi_info.get("dailyEnergy", 0)
-                    daily_charge = kpi_info.get("dailyChargeCapacity", 0)
-                    daily_discharge = kpi_info.get("dailyDisChargeCapacity", 0)
-                    
-                    _LOGGER.debug("Raw KPI values: dailyEnergy=%s, dailyCharge=%s, dailyDischarge=%s", 
-                                 daily_energy, daily_charge, daily_discharge)
-                    
-                    # Convert to float directly (KPI data is already numeric)
-                    output["panel_production_today"] = float(daily_energy) if daily_energy is not None else 0.0
-                    output["battery_injection_today"] = float(daily_charge) if daily_charge is not None else 0.0
-                    output["battery_consumption_today"] = float(daily_discharge) if daily_discharge is not None else 0.0
-                    
-                    _LOGGER.debug("Today's data from KPI: production=%s, battery_charge=%s, battery_discharge=%s", 
-                                 output["panel_production_today"], 
-                                 output["battery_injection_today"], 
-                                 output["battery_consumption_today"])
-                else:
-                    _LOGGER.warning("KPI data not available or unsuccessful: %s", kpi_data)
-            else:
-                _LOGGER.warning("Failed to get KPI data: %s - %s", kpi_response.status_code, kpi_response.text)
-        except Exception as e:
-            _LOGGER.error("Error getting today's KPI data: %s", e)
-        
-        # Fallback to monthly data if KPI data is not available or incomplete
-        if output["panel_production_today"] == 0.0:
-            _LOGGER.debug("KPI data was 0, trying fallback methods")
-            
-            # Try station list data as fallback
-            try:
-                station_data = self.get_station_list()
-                if station_data.get("success") and "data" in station_data and "list" in station_data["data"]:
-                    station_list = station_data["data"]["list"]
-                    if len(station_list) > 0:
-                        station_info = station_list[0]
-                        # Try to get daily energy from station data
-                        if "dailyEnergy" in station_info:
-                            output["panel_production_today"] = extract_numeric(station_info["dailyEnergy"])
-                            _LOGGER.debug("Got today's production from station list: %s", output["panel_production_today"])
-            except Exception as e:
-                _LOGGER.debug("Station list fallback failed: %s", e)
-            
-            # Try monthly data as last resort
-            if output["panel_production_today"] == 0.0:
-                month_panel_production_list = month_data["data"]["productPower"]
-                if month_panel_production_list and len(month_panel_production_list) > datetime.now().day - 1:
-                    panel_production_value_today = month_panel_production_list[datetime.now().day - 1]
-                    if panel_production_value_today != "--" and panel_production_value_today != "null":
-                        output["panel_production_today"] = extract_numeric(panel_production_value_today)
-                        _LOGGER.debug("Got today's production from monthly data: %s", output["panel_production_today"])
-        
-        if output["battery_injection_today"] == 0.0 and month_charge_power_list:
-            if len(month_charge_power_list) > datetime.now().day - 1:
-                charge_value_today = month_charge_power_list[datetime.now().day - 1]
-                if charge_value_today != "--" and charge_value_today != "null":
-                    output["battery_injection_today"] = extract_numeric(charge_value_today)
-
-        if output["battery_consumption_today"] == 0.0 and month_discharge_power_list:
-            if len(month_discharge_power_list) > datetime.now().day - 1:
-                discharge_value_today = month_discharge_power_list[datetime.now().day - 1]
-                if discharge_value_today != "--" and discharge_value_today != "null":
-                    output["battery_consumption_today"] = extract_numeric(discharge_value_today)
-
-        # Get week data for grid consumption/injection
-        try:
-            week_data = self.get_week_data()
-            if week_data and len(week_data) > 0:
-                output["grid_consumption_today"] = extract_numeric(week_data[-1]["data"]["totalBuyPower"])
-                output["grid_injection_today"] = extract_numeric(week_data[-1]["data"]["totalOnGridPower"])
-        except Exception as e:
-            _LOGGER.error("Error getting week data: %s", e)
-
-        # Try to get house load and self-use from monthly data if available
-        month_self_use_list = month_data["data"]["selfUsePower"]
-        if month_self_use_list and len(month_self_use_list) > datetime.now().day - 1:
-            self_use_value_today = month_self_use_list[datetime.now().day - 1]
-            if self_use_value_today != "--" and self_use_value_today != "null":
-                output["panel_production_consumption_today"] = extract_numeric(self_use_value_today)
-    
-        month_house_load_list = month_data["data"]["usePower"]
-        if month_house_load_list and len(month_house_load_list) > datetime.now().day - 1:
-            house_load_value_today = month_house_load_list[datetime.now().day - 1]
-            if house_load_value_today != "--" and house_load_value_today != "null":
-                output["house_load_today"] = extract_numeric(house_load_value_today)
-        
-        # Week energy sensors
-        _LOGGER.debug("Getting Week's energy data")
-        today = datetime.now()
-        start_day_week = today - timedelta(days=today.weekday())
-
-        days_previous_month = []
-        days_current_month = []
-        
-        for i in range(7):
-            current_day = start_day_week + timedelta(days=i)
-            if current_day.month < today.month:
-                days_previous_month.append(current_day.day)
-            else: 
-                days_current_month.append(current_day.day)
-
-        panel_production_value_week = 0
-        panel_production_consumption_value_week = 0
-        house_load_value_week = 0
-        battery_injection_value_week = 0
-        battery_consumption_value_week = 0
-        
-        if days_previous_month:
-            previous_month_data = self.call_energy_balance(ENERGY_BALANCE_CALL_TYPE.PREVIOUS_MONTH)
-            panel_production_value_week += self.calculate_week_energy(previous_month_data, days_previous_month, "productPower")
-            panel_production_consumption_value_week += self.calculate_week_energy(previous_month_data, days_previous_month, "selfUsePower")
-            house_load_value_week += self.calculate_week_energy(previous_month_data, days_previous_month, "usePower")
-            battery_injection_value_week += self.calculate_week_energy(previous_month_data, days_previous_month, "chargePower")
-            battery_consumption_value_week += self.calculate_week_energy(previous_month_data, days_previous_month, "dischargePower")
-        
-        if days_current_month:
-            panel_production_value_week += self.calculate_week_energy(month_data, days_current_month, "productPower")
-            panel_production_consumption_value_week += self.calculate_week_energy(month_data, days_current_month, "selfUsePower")
-            house_load_value_week += self.calculate_week_energy(month_data, days_current_month, "usePower")
-            battery_injection_value_week += self.calculate_week_energy(month_data, days_current_month, "chargePower")
-            battery_consumption_value_week += self.calculate_week_energy(month_data, days_current_month, "dischargePower")
-
-        output["panel_production_week"] = panel_production_value_week
-        output["panel_production_consumption_week"] = panel_production_consumption_value_week
-        output["house_load_week"] = house_load_value_week
-        output["battery_injection_week"] = battery_injection_value_week
-        output["battery_consumption_week"] = battery_consumption_value_week
-        if week_data:
-            output["grid_consumption_week"] = sum(extract_numeric(day["data"]["totalBuyPower"]) for day in week_data if (day["data"]["totalBuyPower"] != "--" and day["data"]["totalBuyPower"] != "null"))
-            output["grid_injection_week"] = sum(extract_numeric(day["data"]["totalOnGridPower"]) for day in week_data if (day["data"]["totalOnGridPower"] != "--" and day["data"]["totalOnGridPower"] != "null"))
-
-        # Year energy sensors
-        _LOGGER.debug("Getting Years's energy data")
-        year_data = self.call_energy_balance(ENERGY_BALANCE_CALL_TYPE.YEAR)
-        output["panel_production_consumption_year"] = extract_numeric(year_data["data"]["totalSelfUsePower"])
-        output["house_load_year"] = extract_numeric(year_data["data"]["totalUsePower"])
-        output["panel_production_year"] = extract_numeric(year_data["data"]["totalProductPower"])
-        output["grid_consumption_year"] = extract_numeric(year_data["data"]["totalBuyPower"])
-        output["grid_injection_year"] = extract_numeric(year_data["data"]["totalOnGridPower"])
-
-        charge_power_list = year_data["data"]["chargePower"]
-        if charge_power_list:
-            total_charge_power = sum(extract_numeric(value) for value in charge_power_list if (value != "--" and value != "null"))
-            output["battery_injection_year"] = total_charge_power
-        
-        discharge_power_list = year_data["data"]["dischargePower"]
-        if discharge_power_list:
-            total_discharge_power = sum(extract_numeric(value) for value in discharge_power_list if (value != "--" and value != "null"))
-            output["battery_consumption_year"] = total_discharge_power
-        
-        use_power_list = year_data["data"]["usePower"]
-        if use_power_list:
-            charge_value_this_month = use_power_list[datetime.now().month - 1]
-            charge_value_this_month = extract_numeric(charge_value_this_month)
-            output["house_load_month"] = charge_value_this_month
-        
-        # Lifetime energy sensors
-        _LOGGER.debug("Getting Lifetime's energy data")
-        lifetime_data = self.call_energy_balance(ENERGY_BALANCE_CALL_TYPE.LIFETIME)
-        output["panel_production_lifetime"] = extract_numeric(lifetime_data["data"]["totalProductPower"])
-        output["panel_production_consumption_lifetime"] = extract_numeric(lifetime_data["data"]["totalSelfUsePower"])
-        output["house_load_lifetime"] = extract_numeric(lifetime_data["data"]["totalUsePower"])
-        output["grid_consumption_lifetime"] = extract_numeric(lifetime_data["data"]["totalBuyPower"])
-        output["grid_injection_lifetime"] = extract_numeric(lifetime_data["data"]["totalOnGridPower"])
-        
-        lifetime_charge_power_list = lifetime_data["data"]["chargePower"]
-        if lifetime_charge_power_list:
-            lifetime_total_charge_power = sum(extract_numeric(value) for value in lifetime_charge_power_list if (value != "--" and value != "--"))
-            output["battery_injection_lifetime"] = lifetime_total_charge_power
-        
-        lifetime_discharge_power_list = lifetime_data["data"]["dischargePower"]
-        if lifetime_discharge_power_list:
-            lifetime_total_discharge_power = sum(extract_numeric(value) for value in lifetime_discharge_power_list if (value != "--" and value != "--"))
-            output["battery_consumption_lifetime"] = lifetime_total_discharge_power
-        
-        
-    def call_energy_balance(self, call_type: ENERGY_BALANCE_CALL_TYPE, specific_date: datetime = None):
-        _LOGGER.info("Energy Balance API Call - Type: %s, Data Host: %s, Station: %s", call_type, self.data_host, self.station)
-        _LOGGER.info("Session Status - Connected: %s, Cookie Name: %s, CSRF: %s", self.connected, self.session_cookie_name, self.csrf)
-        _LOGGER.info("Session Cookies: %s", dict(self.session.cookies))
-        
-        # Determine timezone to use for DAY computations and request params
-        timezone_offset = "0.0" if self.session_cookie_name == 'dp-session' else "8"
-        timezone_str = "Europe/London" if self.session_cookie_name == 'dp-session' else "Asia/Singapore"
-
-        # Use timezone-aware 'now' for consistent interval math and params
-        currentTime = datetime.now(ZoneInfo(timezone_str))
-        timestampNow = currentTime.timestamp() * 1000
-        current_day = currentTime.day
-        current_month = currentTime.month
-        current_year = currentTime.year
-        first_day_of_month = datetime(current_year, current_month, 1)
-        first_day_of_previous_month = first_day_of_month - relativedelta(months=1)
-        first_day_of_year = datetime(current_year, 1, 1)
-
-        if call_type == ENERGY_BALANCE_CALL_TYPE.MONTH:
-            timestamp = first_day_of_month.timestamp() * 1000
-            dateStr = first_day_of_month.strftime("%Y-%m-%d %H:%M:%S")
-        elif call_type == ENERGY_BALANCE_CALL_TYPE.PREVIOUS_MONTH:
-            timestamp = first_day_of_previous_month.timestamp() * 1000
-            dateStr = first_day_of_previous_month.strftime("%Y-%m-%d %H:%M:%S")
-            call_type = ENERGY_BALANCE_CALL_TYPE.MONTH
-        elif call_type == ENERGY_BALANCE_CALL_TYPE.YEAR:
-            timestamp = first_day_of_year.timestamp() * 1000
-            dateStr = first_day_of_year.strftime("%Y-%m-%d %H:%M:%S")
-        elif call_type == ENERGY_BALANCE_CALL_TYPE.DAY:
-            if specific_date is not None:
-                # Convert provided date to station timezone midnight
-                day_start = datetime(
-                    specific_date.year,
-                    specific_date.month,
-                    specific_date.day,
-                    tzinfo=ZoneInfo(timezone_str)
-                ).replace(hour=0, minute=0, second=0, microsecond=0)
-            else:
-                # Station midnight today
-                day_start = currentTime.replace(hour=0, minute=0, second=0, microsecond=0)
-
-            timestamp = day_start.timestamp() * 1000
-            dateStr = day_start.strftime("%Y-%m-%d %H:%M:%S")
-        else:
-            timestamp = first_day_of_year.timestamp() * 1000
-            dateStr = first_day_of_year.strftime("%Y-%m-%d %H:%M:%S")
-        
-        headers = {
-            "application/json": "text/plain, */*",
-            "Accept-Encoding": "gzip, deflate, br, zstd",
-            "Accept-Language": "en-GB,en;q=0.9",
-            "Host": self.data_host,
-            "Referer": f"https://{self.data_host}/pvmswebsite/assets/build/index.html",
-            "X-Requested-With": "XMLHttpRequest",
-            "Roarand": self.csrf
-        }
-
-        # timezone_offset/timezone_str already computed above for consistency
-
-        params = {
-             "stationDn": unquote(self.station),
-             "timeDim": call_type,
-             "queryTime": int(timestamp),
-             "timeZone": timezone_offset,
-             "timeZoneStr": timezone_str,
-             "dateStr": dateStr,
-             "_": int(timestampNow)
-        }
-         
-        energy_balance_url = f"https://{self.data_host}/rest/pvms/web/station/v1/overview/energy-balance?{urlencode(params)}"
-        _LOGGER.info("Energy Balance Request URL: %s", energy_balance_url)
-        _LOGGER.info("Energy Balance Request Headers: %s", headers)
-        _LOGGER.info("Energy Balance Request Params: %s", params)
-        
-        energy_balance_response = self.session.get(energy_balance_url, headers=headers)
-        _LOGGER.info("Energy Balance Response Status: %s", energy_balance_response.status_code)
-        _LOGGER.info("Energy Balance Response Headers: %s", dict(energy_balance_response.headers))
-        _LOGGER.info("Energy Balance Response Text (first 500 chars): %s", energy_balance_response.text[:500])
-        try:
-            energy_balance_data = energy_balance_response.json()
-        except Exception as ex:
-            _LOGGER.warn("Error processing Energy Balance response: JSON format invalid!")
-            energy_balance_data = {"success": False, "data": {}}
-        
-        return energy_balance_data
-
-    def get_week_data(self):
-        today = datetime.now()
-        start_of_week = today - timedelta(days=today.weekday())  # Segunda-feira da semana corrente
-        days_to_process = []
-        
-        # Determinar dias a processar
-        if today.weekday() == 6:  # Se for domingo
-            days_to_process = [start_of_week + timedelta(days=i) for i in range(7)]
-        else:  # Outros dias da semana
-            days_to_process = [start_of_week + timedelta(days=i) for i in range(today.weekday() + 1)]
-        
-        # Obter dados para cada dia e armazenar no array
-        week_data = []
-        for day in days_to_process:
-            day_data = self.call_energy_balance(ENERGY_BALANCE_CALL_TYPE.DAY, specific_date=day)
-            week_data.append(day_data)
-            time.sleep(1)
-        
-        return week_data
-
-    def calculate_week_energy(self, data, days, field):
-        sum = 0
-        if data["data"][field]:
-            for day in days:
-                value = data["data"][field][day - 1]
-                if value != "--" and value != "null":
-                    sum += extract_numeric(value)
-
-        return sum
-
     def logout(self) -> bool:
         """Disconnect from api."""
         self.connected = False
@@ -1228,7 +487,7 @@ class FusionSolarAPI:
         """Simulate session renewal."""
         _LOGGER.info("Renewing session.")
         self.connected = False
-        self.dp_session = ""
+        self.bspsession = ""
         self.login()
 
     def _session_monitor(self) -> None:
