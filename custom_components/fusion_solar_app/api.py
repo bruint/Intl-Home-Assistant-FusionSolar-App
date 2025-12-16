@@ -79,19 +79,43 @@ class FusionSolarAPI:
 
     def login(self) -> bool:
         """Connect to api."""
+        _LOGGER.info("Starting login process - login_host: %s", self.login_host)
         
         public_key_url = f"https://{self.login_host}{PUBKEY_URL}"
-        _LOGGER.debug("Getting Public Key at: %s", public_key_url)
+        _LOGGER.info("Getting Public Key at: %s", public_key_url)
         
-        response = self.session.get(public_key_url)
-        _LOGGER.debug("Pubkey Response Headers: %s\r\nResponse: %s", response.headers, response.text)
         try:
-            pubkey_data = response.json()
-            _LOGGER.debug("Pubkey Response: %s", pubkey_data)
-        except Exception as ex:
+            response = self.session.get(public_key_url)
+            _LOGGER.info("Pubkey response - Status: %s", response.status_code)
+            _LOGGER.debug("Pubkey Response Headers: %s", dict(response.headers))
+            _LOGGER.debug("Pubkey Response text (first 500 chars): %s", response.text[:500])
+            
+            if response.status_code != 200:
+                _LOGGER.error("Pubkey request failed with status %s. Response: %s", response.status_code, response.text[:1000])
+                self.connected = False
+                raise APIAuthError(f"Pubkey request failed with status {response.status_code}")
+            
+            if not response.text or not response.text.strip():
+                _LOGGER.error("Pubkey response is empty")
+                self.connected = False
+                raise APIAuthError("Pubkey response is empty")
+            
+            try:
+                pubkey_data = response.json()
+                _LOGGER.debug("Pubkey JSON parsed successfully")
+                _LOGGER.debug("Pubkey Response keys: %s", list(pubkey_data.keys()) if isinstance(pubkey_data, dict) else "Not a dict")
+            except ValueError as json_err:
+                self.connected = False
+                _LOGGER.error("Error processing Pubkey response: JSON format invalid!")
+                _LOGGER.error("JSON decode error: %s", json_err)
+                _LOGGER.error("Response Headers: %s", dict(response.headers))
+                _LOGGER.error("Response text (first 1000 chars): %s", response.text[:1000])
+                _LOGGER.error("Response content type: %s", response.headers.get('content-type', 'unknown'))
+                raise APIAuthError(f"Error processing Pubkey response: JSON format invalid! {json_err}")
+        except requests.exceptions.RequestException as req_err:
+            _LOGGER.error("Request exception while getting pubkey: %s", req_err)
             self.connected = False
-            _LOGGER.error("Error processing Pubkey response: JSON format invalid!\r\nResponse Headers: %s\r\nResponse: %s", response.headers, response.text)
-            raise APIAuthError("Error processing Pubkey response: JSON format invalid!\r\nResponse Headers: %s\r\nResponse: %s", response.headers, response.text)
+            raise APIConnectionError(f"Failed to get pubkey: {req_err}") from req_err
         
         
         pub_key_pem = pubkey_data['pubKey']
@@ -127,17 +151,42 @@ class FusionSolarAPI:
             "x-requested-with": "XMLHttpRequest"
         }
         
-        _LOGGER.debug("Login Request to: %s", login_url)
-        response = self.session.post(login_url, json=payload, headers=headers)
-        _LOGGER.debug("Login: Request Headers: %s\r\nResponse Headers: %s\r\nResponse: %s", headers, response.headers, response.text)
-        if response.status_code == 200:
-            try:
-                login_response = response.json()
-                _LOGGER.debug("Login Response: %s", login_response)
-            except Exception as ex:
-                self.connected = False
-                _LOGGER.error("Error processing Login response: JSON format invalid!\r\nRequest Headers: %s\r\nResponse Headers: %s\r\nResponse: %s", headers, response.headers, response.text)
-                raise APIAuthError("Error processing Login response: JSON format invalid!\r\nRequest Headers: %s\r\nResponse Headers: %s\r\nResponse: %s", headers, response.headers, response.text)
+        _LOGGER.info("Login Request to: %s", login_url)
+        _LOGGER.debug("Login payload (password hidden): %s", {k: v if k != 'password' else '***' for k, v in payload.items()})
+        _LOGGER.debug("Login headers: %s", headers)
+        
+        try:
+            response = self.session.post(login_url, json=payload, headers=headers)
+            _LOGGER.info("Login response - Status: %s", response.status_code)
+            _LOGGER.debug("Login Response Headers: %s", dict(response.headers))
+            _LOGGER.debug("Login Response text (first 500 chars): %s", response.text[:500])
+            
+            if response.status_code == 200:
+                if not response.text or not response.text.strip():
+                    _LOGGER.error("Login response is empty")
+                    self.connected = False
+                    raise APIAuthError("Login response is empty")
+                
+                try:
+                    login_response = response.json()
+                    _LOGGER.debug("Login JSON parsed successfully")
+                    _LOGGER.debug("Login Response keys: %s", list(login_response.keys()) if isinstance(login_response, dict) else "Not a dict")
+                except ValueError as json_err:
+                    self.connected = False
+                    _LOGGER.error("Error processing Login response: JSON format invalid!")
+                    _LOGGER.error("JSON decode error: %s", json_err)
+                    _LOGGER.error("Request Headers: %s", headers)
+                    _LOGGER.error("Response Headers: %s", dict(response.headers))
+                    _LOGGER.error("Response text (first 1000 chars): %s", response.text[:1000])
+                    _LOGGER.error("Response content type: %s", response.headers.get('content-type', 'unknown'))
+                    raise APIAuthError(f"Error processing Login response: JSON format invalid! {json_err}")
+            else:
+                _LOGGER.warning("Login request failed with status %s", response.status_code)
+                _LOGGER.debug("Login response text: %s", response.text[:1000])
+        except requests.exceptions.RequestException as req_err:
+            _LOGGER.error("Request exception during login: %s", req_err)
+            self.connected = False
+            raise APIConnectionError(f"Login request failed: {req_err}") from req_err
             
             redirect_url = None
 
@@ -188,15 +237,23 @@ class FusionSolarAPI:
                 "referer": f"https://{self.login_host}{LOGIN_HEADERS_2_STEP_REFERER}"
             }
     
-            _LOGGER.debug("Redirect to: %s", redirect_url)
-            redirect_response = self.session.get(redirect_url, headers=redirect_headers, allow_redirects=True)
-            _LOGGER.debug("Redirect Response: %s", redirect_response.text)
-            response_headers = redirect_response.headers
-            _LOGGER.debug("Redirect Response headers: %s", response_headers)
+            _LOGGER.info("Redirecting to: %s", redirect_url)
+            _LOGGER.debug("Redirect headers: %s", redirect_headers)
+            
+            try:
+                redirect_response = self.session.get(redirect_url, headers=redirect_headers, allow_redirects=True)
+                _LOGGER.info("Redirect response - Status: %s, Final URL: %s", redirect_response.status_code, redirect_response.url)
+                _LOGGER.debug("Redirect Response text (first 500 chars): %s", redirect_response.text[:500])
+                response_headers = redirect_response.headers
+                _LOGGER.debug("Redirect Response headers: %s", dict(response_headers))
+            except requests.exceptions.RequestException as req_err:
+                _LOGGER.error("Request exception during redirect: %s", req_err)
+                self.connected = False
+                raise APIConnectionError(f"Redirect request failed: {req_err}") from req_err
 
             # Determine data host from final URL
             self.data_host = urlparse(redirect_response.url).netloc
-            _LOGGER.debug("Data host: %s", self.data_host)
+            _LOGGER.info("Data host determined: %s", self.data_host)
 
             if redirect_response.status_code == 200:
                 # Check for bspsession cookie
@@ -215,17 +272,28 @@ class FusionSolarAPI:
                     self.last_session_time = datetime.now(timezone.utc)
                     
                     # Get user ID and CSRF tokens
+                    _LOGGER.info("Getting user ID and CSRF tokens after successful login")
                     self._get_user_id()
                     self.refresh_csrf()
                     
-                    station_data = self.get_station_list()
-                    if station_data and "data" in station_data and "list" in station_data["data"] and len(station_data["data"]["list"]) > 0:
-                        self.station = station_data["data"]["list"][0]["dn"]
-                        _LOGGER.info("Station set to: %s", self.station)
-                    else:
-                        _LOGGER.error("Failed to get station data from API response: %s", station_data)
+                    _LOGGER.info("Attempting to get station list after login")
+                    try:
+                        station_data = self.get_station_list()
+                        if station_data and "data" in station_data and "list" in station_data["data"] and len(station_data["data"]["list"]) > 0:
+                            self.station = station_data["data"]["list"][0]["dn"]
+                            _LOGGER.info("Station set successfully to: %s", self.station)
+                        else:
+                            _LOGGER.error("Failed to get station data from API response")
+                            _LOGGER.error("Station data structure: %s", station_data)
+                            self.connected = False
+                            raise APIAuthError("Failed to get station data")
+                    except Exception as station_err:
+                        _LOGGER.error("Exception while getting station list: %s", station_err)
+                        _LOGGER.error("Exception type: %s", type(station_err).__name__)
+                        import traceback
+                        _LOGGER.error("Full traceback: %s", traceback.format_exc())
                         self.connected = False
-                        raise APIAuthError("Failed to get station data")
+                        raise
                     self._start_session_monitor()
                     return True
                 else:
@@ -247,7 +315,12 @@ class FusionSolarAPI:
 
     def _get_user_id(self):
         """Get user ID dynamically from custom settings endpoint"""
+        _LOGGER.info("Getting user ID from custom settings endpoint")
         try:
+            if not self.data_host:
+                _LOGGER.warning("Cannot get user ID: data_host is not set")
+                return
+                
             custom_settings_url = f"https://{self.data_host}/rest/adminhome/website/v1/customsetting"
             params = {"t": int(time.time() * 1000)}
             headers = {
@@ -262,20 +335,28 @@ class FusionSolarAPI:
                 'x-requested-with': 'XMLHttpRequest'
             }
             
+            _LOGGER.debug("Requesting user ID from: %s", custom_settings_url)
             response = self.session.get(custom_settings_url, headers=headers, params=params)
-            _LOGGER.debug("Custom settings response: %s", response.text)
+            _LOGGER.debug("Custom settings response status: %s", response.status_code)
+            _LOGGER.debug("Custom settings response: %s", response.text[:500])
             
             if response.status_code == 200:
-                data = response.json()
-                if 'menuUserChosen' in data and 'userId' in data['menuUserChosen']:
-                    self.user_id = data['menuUserChosen']['userId']
-                    _LOGGER.debug("Got User ID: %s", self.user_id)
-                else:
-                    _LOGGER.warning("No userId found in custom settings response")
+                try:
+                    data = response.json()
+                    _LOGGER.debug("Custom settings JSON parsed successfully")
+                    if 'menuUserChosen' in data and 'userId' in data['menuUserChosen']:
+                        self.user_id = data['menuUserChosen']['userId']
+                        _LOGGER.info("Got User ID: %s", self.user_id)
+                    else:
+                        _LOGGER.warning("No userId found in custom settings response. Response keys: %s", list(data.keys()) if isinstance(data, dict) else "Not a dict")
+                except ValueError as json_err:
+                    _LOGGER.error("Failed to parse custom settings JSON: %s. Response: %s", json_err, response.text[:500])
             else:
-                _LOGGER.warning("Custom settings request failed: %s", response.status_code)
+                _LOGGER.warning("Custom settings request failed with status %s. Response: %s", response.status_code, response.text[:500])
         except Exception as e:
             _LOGGER.error("Error getting user ID: %s", e)
+            import traceback
+            _LOGGER.error("Traceback: %s", traceback.format_exc())
 
     def set_captcha_img(self):
         timestampNow = datetime.now().timestamp() * 1000
@@ -297,8 +378,12 @@ class FusionSolarAPI:
         _LOGGER.info("Refresh CSRF called - Current CSRF: %s, Time since last refresh: %s", 
                      self.csrf, datetime.now() - self.csrf_time if self.csrf_time else "Never")
         
+        if not self.data_host:
+            _LOGGER.warning("Cannot refresh CSRF: data_host is not set")
+            return
+        
         if self.csrf is None or datetime.now() - self.csrf_time > timedelta(minutes=5):
-            _LOGGER.info("CSRF token needs refresh")
+            _LOGGER.info("CSRF token needs refresh - data_host: %s", self.data_host)
             endpoint = f"https://{self.data_host}/rest/neteco/auth/v1/keep-alive"
             
             try:
@@ -309,22 +394,40 @@ class FusionSolarAPI:
                 }
                 
                 _LOGGER.debug("Getting CSRF at: %s", endpoint)
+                _LOGGER.debug("CSRF request headers: %s", headers)
+                _LOGGER.debug("Session cookies for CSRF request: %s", dict(self.session.cookies))
+                
                 response = self.session.get(endpoint, headers=headers)
+                _LOGGER.debug("CSRF response status: %s", response.status_code)
+                _LOGGER.debug("CSRF response headers: %s", dict(response.headers))
+                _LOGGER.debug("CSRF response text (first 200 chars): %s", response.text[:200])
                 
                 if response.status_code == 200:
-                    data = response.json()
-                    if 'payload' in data:
-                        self.csrf = data['payload']
-                        self.csrf_time = datetime.now()
-                        _LOGGER.debug(f"CSRF refreshed: {self.csrf}")
-                        return
-                    elif 'csrfToken' in data:
-                        self.csrf = data['csrfToken']
-                        self.csrf_time = datetime.now()
-                        _LOGGER.info("CSRF refreshed successfully: %s", self.csrf)
-                        return
+                    try:
+                        data = response.json()
+                        _LOGGER.debug("CSRF response JSON parsed successfully")
+                        _LOGGER.debug("CSRF response data keys: %s", list(data.keys()) if isinstance(data, dict) else "Not a dict")
+                        
+                        if 'payload' in data:
+                            self.csrf = data['payload']
+                            self.csrf_time = datetime.now()
+                            _LOGGER.info("CSRF refreshed from 'payload': %s", self.csrf)
+                            return
+                        elif 'csrfToken' in data:
+                            self.csrf = data['csrfToken']
+                            self.csrf_time = datetime.now()
+                            _LOGGER.info("CSRF refreshed from 'csrfToken': %s", self.csrf)
+                            return
+                        else:
+                            _LOGGER.warning("CSRF response missing expected keys. Response: %s", data)
+                    except ValueError as json_err:
+                        _LOGGER.error("Failed to parse CSRF JSON response: %s. Response text: %s", json_err, response.text[:500])
+                else:
+                    _LOGGER.warning("CSRF refresh request failed with status %s. Response: %s", response.status_code, response.text[:500])
             except Exception as e:
-                _LOGGER.warning("Could not refresh CSRF token: %s", e)
+                _LOGGER.error("Exception while refreshing CSRF token: %s", e)
+                import traceback
+                _LOGGER.error("Traceback: %s", traceback.format_exc())
     
     def _keep_alive_session(self):
         """Keep session alive using events endpoint"""
@@ -364,6 +467,14 @@ class FusionSolarAPI:
         return self.get_station_list()["data"]["list"][0]["dn"]
 
     def get_station_list(self):
+        """Get station list from API."""
+        _LOGGER.info("Getting station list - data_host: %s, connected: %s, csrf: %s", 
+                     self.data_host, self.connected, self.csrf is not None)
+        
+        if not self.data_host:
+            _LOGGER.error("Cannot get station list: data_host is not set")
+            raise APIAuthError("Data host not set. Login may have failed.")
+        
         self.refresh_csrf()
 
         station_url = f"https://{self.data_host}/rest/pvms/web/station/v1/station/station-list"
@@ -388,6 +499,9 @@ class FusionSolarAPI:
         
         if self.csrf:
             station_headers["roarand"] = self.csrf
+            _LOGGER.debug("Added CSRF token to station request headers")
+        else:
+            _LOGGER.warning("No CSRF token available for station request")
         
         # Use SG5/INTL timezone (Asia/Singapore)
         timezone_offset = 8
@@ -403,14 +517,63 @@ class FusionSolarAPI:
             "locale": "en_US",
         }
         
-        _LOGGER.debug("Getting Station at: %s", station_url)
-        station_response = self.session.post(station_url, json=station_payload, headers=station_headers)
-        json_response = station_response.json()
-        _LOGGER.debug("Station info: %s", json_response["data"])
-        return json_response
+        _LOGGER.info("Requesting station list - URL: %s", station_url)
+        _LOGGER.debug("Station request payload: %s", station_payload)
+        _LOGGER.debug("Station request headers: %s", station_headers)
+        _LOGGER.debug("Session cookies: %s", dict(self.session.cookies))
+        
+        try:
+            station_response = self.session.post(station_url, json=station_payload, headers=station_headers)
+            _LOGGER.info("Station list response - Status: %s, URL: %s", station_response.status_code, station_response.url)
+            _LOGGER.debug("Station list response headers: %s", dict(station_response.headers))
+            _LOGGER.debug("Station list response text (first 500 chars): %s", station_response.text[:500])
+            
+            if station_response.status_code != 200:
+                _LOGGER.error("Station list request failed with status %s. Response: %s", 
+                             station_response.status_code, station_response.text[:1000])
+                raise APIAuthError(f"Station list request failed with status {station_response.status_code}")
+            
+            # Check if response is empty
+            if not station_response.text or not station_response.text.strip():
+                _LOGGER.error("Station list response is empty")
+                raise APIAuthError("Station list response is empty")
+            
+            # Try to parse JSON
+            try:
+                json_response = station_response.json()
+                _LOGGER.debug("Station list JSON parsed successfully")
+                _LOGGER.debug("Station list response keys: %s", list(json_response.keys()) if isinstance(json_response, dict) else "Not a dict")
+                
+                if "data" in json_response:
+                    _LOGGER.info("Station list data retrieved successfully")
+                    if "list" in json_response["data"]:
+                        _LOGGER.info("Found %d stations in list", len(json_response["data"]["list"]))
+                        _LOGGER.debug("Station info: %s", json_response["data"])
+                    else:
+                        _LOGGER.warning("Station list response missing 'list' key in data")
+                else:
+                    _LOGGER.warning("Station list response missing 'data' key")
+                
+                return json_response
+            except ValueError as json_err:
+                _LOGGER.error("Failed to parse station list JSON response. Error: %s", json_err)
+                _LOGGER.error("Response status: %s", station_response.status_code)
+                _LOGGER.error("Response headers: %s", dict(station_response.headers))
+                _LOGGER.error("Response text (first 1000 chars): %s", station_response.text[:1000])
+                _LOGGER.error("Response content type: %s", station_response.headers.get('content-type', 'unknown'))
+                raise APIAuthError(f"Failed to parse station list JSON: {json_err}")
+        except requests.exceptions.RequestException as req_err:
+            _LOGGER.error("Request exception while getting station list: %s", req_err)
+            raise APIConnectionError(f"Failed to get station list: {req_err}") from req_err
 
     def get_devices(self) -> list[Device]:
         """Get devices - only returns Panel Production Power sensor."""
+        _LOGGER.info("Getting devices - station: %s, data_host: %s", self.station, self.data_host)
+        
+        if not self.data_host:
+            _LOGGER.error("Cannot get devices: data_host is not set")
+            raise APIAuthError("Data host not set. Login may have failed.")
+        
         self.refresh_csrf()
 
         headers = {
@@ -427,40 +590,74 @@ class FusionSolarAPI:
         params = {"stationDn": unquote(self.station)}
         
         data_access_url = f"https://{self.data_host}/rest/pvms/web/station/v1/overview/energy-flow"
-        _LOGGER.debug("Getting Data at: %s", data_access_url)
-        response = self.session.get(data_access_url, headers=headers, params=params)
+        _LOGGER.info("Requesting energy flow data - URL: %s", data_access_url)
+        _LOGGER.debug("Energy flow params: %s", params)
+        _LOGGER.debug("Energy flow headers: %s", headers)
+        _LOGGER.debug("Session cookies: %s", dict(self.session.cookies))
 
         output = {
             "panel_production_power": 0.0,
         }
 
-        if response.status_code == 200:
-            try:
-                data = response.json()
-                _LOGGER.debug("Get Data Response: %s", data)
-            except Exception as ex:
-                _LOGGER.error("Error processing response: JSON format invalid! %s", response.text)
-                raise APIAuthError("Error processing response: JSON format invalid! %s", response.text)
+        try:
+            response = self.session.get(data_access_url, headers=headers, params=params)
+            _LOGGER.info("Energy flow response - Status: %s, URL: %s", response.status_code, response.url)
+            _LOGGER.debug("Energy flow response headers: %s", dict(response.headers))
+            _LOGGER.debug("Energy flow response text (first 500 chars): %s", response.text[:500])
 
-            if "data" not in data or "flow" not in data["data"]:
-                _LOGGER.error("Error on data structure!")
-                raise APIDataStructureError("Error on data structure!")
-
-            # Extract panel production power from nodes
-            flow_data_nodes = data["data"]["flow"].get("nodes", [])
-            
-            for node in flow_data_nodes:
-                label = node.get("name", "")
-                value = node.get("description", {}).get("value", "")
+            if response.status_code == 200:
+                # Check if response is empty
+                if not response.text or not response.text.strip():
+                    _LOGGER.error("Energy flow response is empty")
+                    raise APIDataStructureError("Energy flow response is empty")
                 
-                if label == "neteco.pvms.devTypeLangKey.string":
-                    output["panel_production_power"] = extract_numeric(value) or 0.0
-                    break
+                try:
+                    data = response.json()
+                    _LOGGER.debug("Energy flow JSON parsed successfully")
+                    _LOGGER.debug("Energy flow response keys: %s", list(data.keys()) if isinstance(data, dict) else "Not a dict")
+                except ValueError as json_err:
+                    _LOGGER.error("Failed to parse energy flow JSON response: %s", json_err)
+                    _LOGGER.error("Response status: %s", response.status_code)
+                    _LOGGER.error("Response headers: %s", dict(response.headers))
+                    _LOGGER.error("Response text (first 1000 chars): %s", response.text[:1000])
+                    _LOGGER.error("Response content type: %s", response.headers.get('content-type', 'unknown'))
+                    raise APIAuthError(f"Error processing response: JSON format invalid! {json_err}")
 
-            _LOGGER.debug("Panel Production Power: %s kW", output["panel_production_power"])
-        else:
-            _LOGGER.error("Error on data structure! %s", response.text)
-            raise APIDataStructureError("Error on data structure! %s", response.text)
+                if "data" not in data:
+                    _LOGGER.error("Energy flow response missing 'data' key. Response keys: %s", list(data.keys()) if isinstance(data, dict) else "Not a dict")
+                    raise APIDataStructureError("Error on data structure: missing 'data' key")
+                
+                if "flow" not in data["data"]:
+                    _LOGGER.error("Energy flow response missing 'flow' key. Data keys: %s", list(data["data"].keys()) if isinstance(data["data"], dict) else "Not a dict")
+                    raise APIDataStructureError("Error on data structure: missing 'flow' key")
+
+                # Extract panel production power from nodes
+                flow_data_nodes = data["data"]["flow"].get("nodes", [])
+                _LOGGER.debug("Found %d nodes in energy flow", len(flow_data_nodes))
+                
+                panel_found = False
+                for node in flow_data_nodes:
+                    label = node.get("name", "")
+                    value = node.get("description", {}).get("value", "")
+                    
+                    _LOGGER.debug("Processing node - label: %s, value: %s", label, value)
+                    
+                    if label == "neteco.pvms.devTypeLangKey.string":
+                        output["panel_production_power"] = extract_numeric(value) or 0.0
+                        panel_found = True
+                        _LOGGER.info("Panel Production Power found: %s kW", output["panel_production_power"])
+                        break
+
+                if not panel_found:
+                    _LOGGER.warning("Panel production power node not found in energy flow")
+                    _LOGGER.debug("Available node labels: %s", [node.get("name", "") for node in flow_data_nodes])
+            else:
+                _LOGGER.error("Energy flow request failed with status %s", response.status_code)
+                _LOGGER.error("Response text (first 1000 chars): %s", response.text[:1000])
+                raise APIDataStructureError(f"Error on data structure! Status: {response.status_code}")
+        except requests.exceptions.RequestException as req_err:
+            _LOGGER.error("Request exception while getting devices: %s", req_err)
+            raise APIConnectionError(f"Failed to get devices: {req_err}") from req_err
 
         """Get devices on api."""
         return [

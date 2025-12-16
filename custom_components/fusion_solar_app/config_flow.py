@@ -198,6 +198,7 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
         if user_input is not None:
+            _LOGGER.info("Reconfigure step - attempting login with host: %s", user_input[FUSION_SOLAR_HOST])
             try:
                 # Try to login with the provided credentials
                 api = FusionSolarAPI(
@@ -206,7 +207,9 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                     user_input[FUSION_SOLAR_HOST], 
                     ""
                 )
+                _LOGGER.info("Reconfigure - calling login API")
                 await self.hass.async_add_executor_job(api.login)
+                _LOGGER.info("Reconfigure - login successful")
                 
                 # If we get here, login was successful
                 info = {"title": f"Fusion Solar App Integration"}
@@ -214,12 +217,21 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Captcha failed, redirecting to Credentials screen")
                 self._input_data = user_input  # Store the original user data
                 return await self.async_step_captcha()
-            except APIAuthError:
+            except APIAuthError as auth_err:
+                _LOGGER.error("Authentication error during reconfigure: %s", auth_err)
+                import traceback
+                _LOGGER.error("Traceback: %s", traceback.format_exc())
                 errors["base"] = "invalid_auth"
-            except APIConnectionError:
+            except APIConnectionError as conn_err:
+                _LOGGER.error("Connection error during reconfigure: %s", conn_err)
+                import traceback
+                _LOGGER.error("Traceback: %s", traceback.format_exc())
                 errors["base"] = "cannot_connect"
-            except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Unexpected exception")
+            except Exception as ex:  # pylint: disable=broad-except
+                _LOGGER.exception("Unexpected exception during reconfigure: %s", ex)
+                _LOGGER.error("Exception type: %s", type(ex).__name__)
+                import traceback
+                _LOGGER.error("Full traceback: %s", traceback.format_exc())
                 errors["base"] = "unknown"
             else:
                 return self.async_update_reload_and_abort(

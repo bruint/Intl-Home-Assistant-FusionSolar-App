@@ -128,23 +128,33 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
         This is the place to pre-process the data to lookup tables
         so entities can quickly look up their data.
         """
+        _LOGGER.info("Coordinator update started - connected: %s, station: %s", self.api.connected, self.api.station)
         try:
             if not self.api.connected:
+                _LOGGER.info("Not connected, attempting login")
                 await self.hass.async_add_executor_job(self.api.login)
+                _LOGGER.info("Login completed - connected: %s", self.api.connected)
             
             # If we have a session but no station data, retrieve it now
             if self.api.connected and self.api.station is None:
+                _LOGGER.info("Connected but no station, retrieving station data")
                 try:
                     station_data = await self.hass.async_add_executor_job(self.api.get_station_list)
+                    _LOGGER.debug("Station data retrieved: %s", station_data)
                     if station_data and "data" in station_data and "list" in station_data["data"] and len(station_data["data"]["list"]) > 0:
                         self.api.station = station_data["data"]["list"][0]["dn"]
                         _LOGGER.info("Station retrieved from session: %s", self.api.station)
                     else:
                         _LOGGER.warning("Could not retrieve station data from session")
+                        _LOGGER.debug("Station data structure: %s", station_data)
                 except Exception as e:
-                    _LOGGER.warning("Failed to retrieve station data from session: %s", e)
+                    _LOGGER.error("Failed to retrieve station data from session: %s", e)
+                    import traceback
+                    _LOGGER.error("Traceback: %s", traceback.format_exc())
             
+            _LOGGER.info("Getting devices from API")
             devices = await self.hass.async_add_executor_job(self.api.get_devices)
+            _LOGGER.info("Retrieved %d devices", len(devices))
         except APIAuthCaptchaError as err:
             _LOGGER.warning("CAPTCHA required for API access. Session may have expired.")
             # Mark as disconnected and return empty data
