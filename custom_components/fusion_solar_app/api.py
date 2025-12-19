@@ -675,9 +675,17 @@ class FusionSolarAPI:
         if self.roarand:
             headers["roarand"] = self.roarand
         
-        _LOGGER.warning("Getting real-time data from: %s", realtime_url)
-        _LOGGER.warning("Real-time data params: %s", params)
+        _LOGGER.warning("=== REAL-TIME DATA: Starting request ===")
+        _LOGGER.warning("Real-time data - URL: %s", realtime_url)
+        _LOGGER.warning("Real-time data - Params: %s", params)
+        _LOGGER.warning("Real-time data - Headers: %s", headers)
+        _LOGGER.warning("Real-time data - Device DN: %s", device_dn)
+        
         response = self.session.get(realtime_url, headers=headers, params=params)
+
+        _LOGGER.warning("Real-time data - Response status: %d", response.status_code)
+        _LOGGER.warning("Real-time data - Response URL: %s", response.url)
+        _LOGGER.warning("Real-time data - Response headers: %s", dict(response.headers))
 
         output = {
             "panel_production_power": 0.0,
@@ -685,7 +693,7 @@ class FusionSolarAPI:
 
         if response.status_code != 200:
             _LOGGER.error("Real-time data request failed with status %s", response.status_code)
-            _LOGGER.error("Response text (first 500 chars): %s", response.text[:500] if response.text else "Empty")
+            _LOGGER.error("Response text (first 1000 chars): %s", response.text[:1000] if response.text else "Empty")
             self.connected = False
             raise APIAuthError(f"Real-time data request failed with status {response.status_code}")
 
@@ -699,34 +707,67 @@ class FusionSolarAPI:
         content_type = response.headers.get('content-type', '').lower()
         if 'text/html' in content_type or (response.text and response.text.strip().startswith('<')):
             _LOGGER.error("Real-time data returned HTML instead of JSON - session may have expired")
-            _LOGGER.debug("Response text (first 500 chars): %s", response.text[:500] if response.text else "Empty")
+            _LOGGER.error("Response text (first 500 chars): %s", response.text[:500] if response.text else "Empty")
             self.connected = False
             raise APIAuthError("Session expired - real-time data returned HTML")
 
         try:
             data = response.json()
-            _LOGGER.debug("Real-time data response: %s", data)
+            _LOGGER.warning("=== REAL-TIME DATA: Full JSON response ===")
+            _LOGGER.warning("Real-time data - Full response: %s", json.dumps(data, indent=2))
         except ValueError as json_err:
             _LOGGER.error("Error processing real-time data response: JSON format invalid! %s", json_err)
             _LOGGER.error("Response text (first 1000 chars): %s", response.text[:1000] if response.text else "Empty")
             self.connected = False
             raise APIAuthError(f"Error processing real-time data response: JSON format invalid! {json_err}")
 
-        # Extract Active power (signal ID 10018) from signals
+        # Extract Active power by matching signal name
+        _LOGGER.warning("=== REAL-TIME DATA: Extracting Active power ===")
         if "data" in data and isinstance(data["data"], list) and len(data["data"]) > 0:
-            signals_data = data["data"][0].get("signals", [])
-            for signal in signals_data:
-                if signal.get("id") == 10018:  # Active power
-                    active_power = signal.get("realValue", "0")
-                    try:
-                        output["panel_production_power"] = float(active_power)
-                        _LOGGER.warning("Found Active power (signal 10018): %s kW", output["panel_production_power"])
-                        break
-                    except (ValueError, TypeError):
-                        _LOGGER.warning("Could not convert Active power value: %s", active_power)
+            _LOGGER.warning("Real-time data - Found data array with %d items", len(data["data"]))
+            
+            # Check all items in data array for signals
+            for idx, data_item in enumerate(data["data"]):
+                _LOGGER.warning("Real-time data - Processing data item %d: %s", idx, list(data_item.keys()) if isinstance(data_item, dict) else "Not a dict")
+                
+                if isinstance(data_item, dict) and "signals" in data_item:
+                    signals_data = data_item.get("signals", [])
+                    _LOGGER.warning("Real-time data - Found %d signals in item %d", len(signals_data), idx)
+                    
+                    # Log all signal names for debugging
+                    signal_names = [sig.get("name", "Unknown") for sig in signals_data]
+                    _LOGGER.warning("Real-time data - Available signal names: %s", signal_names)
+                    
+                    # Search for "Active power" by name
+                    for signal in signals_data:
+                        signal_name = signal.get("name", "")
+                        signal_id = signal.get("id", "")
+                        signal_value = signal.get("realValue", "")
+                        
+                        _LOGGER.warning("Real-time data - Checking signal: id=%s, name='%s', value=%s", signal_id, signal_name, signal_value)
+                        
+                        if signal_name == "Active power":
+                            _LOGGER.warning("Real-time data - Found Active power signal!")
+                            _LOGGER.warning("Real-time data - Signal details: %s", json.dumps(signal, indent=2))
+                            
+                            try:
+                                output["panel_production_power"] = float(signal_value)
+                                _LOGGER.warning("Real-time data - Active power extracted: %s kW", output["panel_production_power"])
+                                break
+                            except (ValueError, TypeError) as conv_err:
+                                _LOGGER.error("Real-time data - Could not convert Active power value '%s': %s", signal_value, conv_err)
+                    else:
+                        continue  # Continue outer loop if we found Active power
+                    break  # Break outer loop if we found Active power
+                else:
+                    _LOGGER.warning("Real-time data - Item %d does not contain signals", idx)
+        else:
+            _LOGGER.warning("Real-time data - No data array found or empty. Response keys: %s", list(data.keys()) if isinstance(data, dict) else "Not a dict")
         
         if output["panel_production_power"] == 0.0:
-            _LOGGER.warning("Active power not found in real-time data. Response structure: %s", list(data.keys()) if isinstance(data, dict) else "Not a dict")
+            _LOGGER.warning("Real-time data - Active power not found or is 0.0. Final output: %s", output)
+        else:
+            _LOGGER.warning("Real-time data - Successfully extracted Active power: %s kW", output["panel_production_power"])
 
         """Get devices on api."""
         return [
