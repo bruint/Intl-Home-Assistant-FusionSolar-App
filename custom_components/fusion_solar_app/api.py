@@ -217,14 +217,14 @@ class FusionSolarAPI:
             raise APIAuthError(f"Redirect failed: {redirect_err}") from redirect_err
 
         if redirect_response.status_code == 200:
-                # Check for bspsession cookie
-                session_cookie = None
-                
-                for cookie in self.session.cookies:
-                    if cookie.name == 'bspsession':
-                        session_cookie = cookie.value
-                        break
-                
+            # Check for bspsession cookie
+            session_cookie = None
+            
+            for cookie in self.session.cookies:
+                if cookie.name == 'bspsession':
+                    session_cookie = cookie.value
+                    break
+            
             if session_cookie:
                 _LOGGER.debug("Found bspsession Cookie: %s", session_cookie)
                 self.bspsession = session_cookie
@@ -555,7 +555,7 @@ class FusionSolarAPI:
 
     def get_device_unique_id(self, device_id: str, device_type: DeviceType) -> str:
         """Return a unique device id."""
-        return f"{self.controller_name}_{device_id.lower().replace(" ", "_")}"
+        return f"{self.controller_name}_{device_id.lower().replace(' ', '_')}"
 
     def get_device_name(self, device_id: str) -> str:
         """Return the device name."""
@@ -586,7 +586,7 @@ class FusionSolarAPI:
                 _LOGGER.debug("%s: Value being returned is int: %i", device_id, value)
                 return int(value)
         except ValueError:
-            _LOGGER.warn(f"Value '{value}' for '{device_id}' can't be converted.")
+            _LOGGER.warning("Value '%s' for '%s' can't be converted.", value, device_id)
             return 0.0
 
 class APIAuthError(Exception):
