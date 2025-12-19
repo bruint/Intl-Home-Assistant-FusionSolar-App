@@ -204,8 +204,9 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
             if captcha_img:
                 _LOGGER.info("CAPTCHA Step - Image length: %d characters", len(captcha_img))
                 _LOGGER.info("CAPTCHA Step - Image starts with: %s", captcha_img[:50] if len(captcha_img) > 50 else captcha_img)
+                _LOGGER.info("CAPTCHA Step - Image is base64 data URL: %s", captcha_img.startswith("data:image"))
             else:
-                _LOGGER.warning("CAPTCHA Step - No image data received")
+                _LOGGER.warning("CAPTCHA Step - No image data received - captcha_img is empty or None")
         except Exception as err:
             _LOGGER.error("CAPTCHA Step - Failed to get CAPTCHA image: %s", err)
             _LOGGER.exception("CAPTCHA Step - Exception traceback:")
@@ -217,17 +218,23 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
             # Use exact same format as the old working version
             captcha_html = '<img id="fusion_solar_app_security_captcha" src="' + captcha_img + '"/>'
             _LOGGER.info("CAPTCHA Step - CAPTCHA image available, creating HTML")
+            _LOGGER.info("CAPTCHA Step - Full HTML length: %d characters", len(captcha_html))
         else:
             captcha_html = '<p><strong>CAPTCHA Image Failed to Load</strong><br/>Please try refreshing the page or check your network connection.</p>'
             _LOGGER.warning("CAPTCHA Step - No CAPTCHA image, showing error message")
         
-        _LOGGER.info("CAPTCHA Step - HTML preview: %s", captcha_html[:100] + "..." if len(captcha_html) > 100 else captcha_html)
+        _LOGGER.info("CAPTCHA Step - HTML preview (first 200 chars): %s", captcha_html[:200] + "..." if len(captcha_html) > 200 else captcha_html)
+        _LOGGER.info("CAPTCHA Step - Domain for placeholder: %s", domain)
         
         # Store the API instance for reuse in login attempt
         # This maintains the session cookies from the CAPTCHA fetch
         _LOGGER.info("CAPTCHA Step - Storing API instance for reuse in login attempt")
         _LOGGER.info("CAPTCHA Step - API instance captcha_input when storing: %s", api_instance.captcha_input if api_instance else "N/A")
         self._captcha_api_instance = api_instance
+        
+        description_placeholders = {"captcha_img": captcha_html, "domain": domain}
+        _LOGGER.info("CAPTCHA Step - description_placeholders keys: %s", list(description_placeholders.keys()))
+        _LOGGER.info("CAPTCHA Step - description_placeholders captcha_img length: %d", len(description_placeholders["captcha_img"]))
         _LOGGER.info("=== CAPTCHA STEP: Showing form to user ===")
         
         return self.async_show_form(
@@ -240,7 +247,7 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                     vol.Required(CAPTCHA_INPUT): str,
                 }
             ),
-            description_placeholders={"captcha_img": captcha_html, "domain": domain},
+            description_placeholders=description_placeholders,
             errors=errors,
         )
 
