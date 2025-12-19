@@ -166,6 +166,9 @@ class FusionSolarAPI:
             else:
                 redirect_url = f"https://{self.login_host}{redirect_info}"
         else:
+            _LOGGER.warning("=== LOGIN: No redirect URL in response ===")
+            _LOGGER.warning("LOGIN - Full login response: %s", login_response)
+            _LOGGER.warning("LOGIN - Response keys: %s", list(login_response.keys()) if isinstance(login_response, dict) else "Not a dict")
             _LOGGER.warning("Login response did not include redirect information.")
             self.connected = False
 
@@ -219,7 +222,11 @@ class FusionSolarAPI:
 
             # Determine data host from final URL
             self.data_host = urlparse(redirect_response.url).netloc
-            _LOGGER.debug("Data host: %s", self.data_host)
+            _LOGGER.warning("=== LOGIN: Redirect completed ===")
+            _LOGGER.warning("LOGIN - Redirect URL: %s", redirect_response.url)
+            _LOGGER.warning("LOGIN - Data host extracted: %s", self.data_host)
+            _LOGGER.warning("LOGIN - Redirect status code: %d", redirect_response.status_code)
+            _LOGGER.warning("LOGIN - Session cookies after redirect: %s", self._get_cookies_safe())
         except Exception as redirect_err:
             _LOGGER.error("Error during redirect: %s", redirect_err)
             self.connected = False
@@ -354,6 +361,10 @@ class FusionSolarAPI:
             raise APIAuthError("Cannot refresh CSRF: data_host is not set. Login may have failed or session expired.")
         
         if self.csrf is None or datetime.now() - self.csrf_time > timedelta(minutes=5):
+            _LOGGER.warning("=== CSRF REFRESH: Starting ===")
+            _LOGGER.warning("CSRF - data_host: %s", self.data_host)
+            _LOGGER.warning("CSRF - Session cookies: %s", self._get_cookies_safe())
+            _LOGGER.warning("CSRF - bspsession cookie: %s", self.bspsession)
             _LOGGER.info("CSRF token needs refresh")
             endpoint = f"https://{self.data_host}/rest/neteco/auth/v1/keep-alive"
             
@@ -364,8 +375,12 @@ class FusionSolarAPI:
                     "Referer": f"https://{self.data_host}/pvmswebsite/assets/build/index.html"
                 }
                 
-                _LOGGER.debug("Getting CSRF at: %s", endpoint)
+                _LOGGER.warning("CSRF - Requesting from endpoint: %s", endpoint)
+                _LOGGER.warning("CSRF - Request headers: %s", headers)
                 response = self.session.get(endpoint, headers=headers)
+                _LOGGER.warning("CSRF - Response status: %d", response.status_code)
+                _LOGGER.warning("CSRF - Response URL: %s", response.url)
+                _LOGGER.warning("CSRF - Response headers: %s", dict(response.headers))
                 
                 if response.status_code == 200:
                     # Check if response is HTML (session expired)
