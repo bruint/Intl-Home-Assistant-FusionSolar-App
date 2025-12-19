@@ -504,13 +504,25 @@ class FusionSolarAPI:
             "locale": "en_US",
         }
         
-        _LOGGER.debug("Getting Station at: %s", station_url)
+        _LOGGER.warning("=== STATION LIST: Starting request ===")
+        _LOGGER.warning("Station List - URL: %s", station_url)
+        _LOGGER.warning("Station List - Session cookies: %s", self._get_cookies_safe())
+        _LOGGER.warning("Station List - bspsession cookie: %s", self.bspsession)
+        _LOGGER.warning("Station List - Payload: %s", station_payload)
+        _LOGGER.warning("Station List - Headers: %s", station_headers)
+        
         station_response = self.session.post(station_url, json=station_payload, headers=station_headers)
+        
+        _LOGGER.warning("Station List - Response status: %d", station_response.status_code)
+        _LOGGER.warning("Station List - Response URL: %s", station_response.url)
+        _LOGGER.warning("Station List - Response headers: %s", dict(station_response.headers))
         
         # Check response status
         if station_response.status_code != 200:
             _LOGGER.error("Station list request failed with status %s", station_response.status_code)
-            _LOGGER.debug("Response text (first 500 chars): %s", station_response.text[:500] if station_response.text else "Empty")
+            _LOGGER.error("Station List - Response text (first 1000 chars): %s", station_response.text[:1000] if station_response.text else "Empty")
+            _LOGGER.error("Station List - Request URL was: %s", station_url)
+            _LOGGER.error("Station List - Cookies sent: %s", self._get_cookies_safe())
             self.connected = False
             raise APIAuthError(f"Station list request failed with status {station_response.status_code}")
         
