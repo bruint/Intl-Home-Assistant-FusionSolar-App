@@ -83,8 +83,15 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
         domain_data = self._input_data if hasattr(self, '_input_data') else {}
         domain = domain_data.get(FUSION_SOLAR_HOST, "")
         
+        _LOGGER.info("=== CAPTCHA STEP: Entry point ===")
+        _LOGGER.info("CAPTCHA Step - user_input is None: %s", user_input is None)
         if user_input is not None:
-            _LOGGER.error("CAPTCHA Debug - Credentials step called with user_input: %s", user_input)
+            _LOGGER.info("CAPTCHA Step - Received user_input with keys: %s", list(user_input.keys()))
+            _LOGGER.info("CAPTCHA Step - CAPTCHA code in input: '%s'", user_input.get(CAPTCHA_INPUT, "NOT PROVIDED"))
+        
+        if user_input is not None:
+            _LOGGER.info("=== CAPTCHA STEP: Processing user input ===")
+            _LOGGER.info("CAPTCHA Step - Credentials step called with user_input: %s", user_input)
             
             # Combine domain and credentials
             full_data = {**domain_data, **user_input}
@@ -93,17 +100,23 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                 # Try to login with the provided credentials and CAPTCHA
                 # Reuse the same API instance that fetched the CAPTCHA to maintain session
                 captcha_code = user_input.get(CAPTCHA_INPUT, "").strip()
-                _LOGGER.error("CAPTCHA Debug - Using CAPTCHA code from user input: '%s'", captcha_code)
+                _LOGGER.info("=== CAPTCHA STEP: Preparing login attempt ===")
+                _LOGGER.info("CAPTCHA Step - Extracted CAPTCHA code from user input: '%s' (length: %d)", captcha_code, len(captcha_code))
+                _LOGGER.info("CAPTCHA Step - Has stored API instance: %s", hasattr(self, '_captcha_api_instance') and self._captcha_api_instance is not None)
                 
                 if hasattr(self, '_captcha_api_instance') and self._captcha_api_instance:
+                    _LOGGER.info("CAPTCHA Step - Reusing stored API instance")
                     api = self._captcha_api_instance
+                    old_captcha = api.captcha_input
                     api.user = user_input[CONF_USERNAME]
                     api.pwd = user_input[CONF_PASSWORD]
                     # Always use the CAPTCHA code from the current user input, not any stale value
                     api.captcha_input = captcha_code
-                    _LOGGER.error("CAPTCHA Debug - Reusing API instance with session cookies: %s", api._get_cookies_safe())
-                    _LOGGER.error("CAPTCHA Debug - Set captcha_input on API instance to: '%s'", api.captcha_input)
+                    _LOGGER.info("CAPTCHA Step - API instance old captcha_input: '%s'", old_captcha)
+                    _LOGGER.info("CAPTCHA Step - API instance new captcha_input: '%s'", api.captcha_input)
+                    _LOGGER.info("CAPTCHA Step - Reusing API instance with session cookies: %s", api._get_cookies_safe())
                 else:
+                    _LOGGER.info("CAPTCHA Step - Creating new API instance (no stored instance)")
                     # Fallback: create new API instance if no stored instance
                     api = FusionSolarAPI(
                         user_input[CONF_USERNAME], 
@@ -111,10 +124,13 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                         domain, 
                         captcha_code
                     )
-                    _LOGGER.error("CAPTCHA Debug - Created new API instance (no stored instance)")
+                    _LOGGER.info("CAPTCHA Step - New API instance created with captcha_input: '%s'", api.captcha_input)
                 
-                _LOGGER.error("CAPTCHA Debug - Attempting login with domain: %s, username: %s, captcha: '%s'", domain, user_input[CONF_USERNAME], captcha_code)
+                _LOGGER.info("=== CAPTCHA STEP: Calling login API ===")
+                _LOGGER.info("CAPTCHA Step - Login attempt - domain: %s, username: %s, captcha: '%s'", domain, user_input[CONF_USERNAME], captcha_code)
+                _LOGGER.info("CAPTCHA Step - API instance captcha_input before login: '%s'", api.captcha_input)
                 await self.hass.async_add_executor_job(api.login)
+                _LOGGER.info("=== CAPTCHA STEP: Login successful ===")
                 
                 # If we get here, login was successful
                 info = {"title": f"Fusion Solar App Integration"}
@@ -131,62 +147,83 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                 return self.async_create_entry(title=info["title"], data=full_data)
                 
             except APIAuthCaptchaError:
-                _LOGGER.error("CAPTCHA Debug - CAPTCHA still required")
+                _LOGGER.info("=== CAPTCHA STEP: Login failed - CAPTCHA required ===")
+                _LOGGER.info("CAPTCHA Step - APIAuthCaptchaError caught, CAPTCHA still required")
                 errors["base"] = "captcha_required"
                 # Clear the old API instance to force a fresh CAPTCHA fetch
                 if hasattr(self, '_captcha_api_instance'):
+                    _LOGGER.info("CAPTCHA Step - Clearing stored API instance to force fresh CAPTCHA")
                     delattr(self, '_captcha_api_instance')
             except APIAuthError as e:
-                if "Incorrect CAPTCHA code" in str(e):
-                    _LOGGER.error("CAPTCHA Debug - Incorrect CAPTCHA provided")
+                _LOGGER.info("=== CAPTCHA STEP: Login failed - APIAuthError ===")
+                _LOGGER.info("CAPTCHA Step - APIAuthError: %s", str(e))
+                if "Incorrect CAPTCHA code" in str(e) or "Incorrect CAPTCHA" in str(e):
+                    _LOGGER.info("CAPTCHA Step - Error indicates incorrect CAPTCHA code")
+                    _LOGGER.info("CAPTCHA Step - CAPTCHA code that was used: '%s'", captcha_code)
                     errors["base"] = "captcha_incorrect"
                     # Clear the old API instance to force a fresh CAPTCHA fetch
                     if hasattr(self, '_captcha_api_instance'):
+                        _LOGGER.info("CAPTCHA Step - Clearing stored API instance to force fresh CAPTCHA")
                         delattr(self, '_captcha_api_instance')
                 else:
-                    _LOGGER.error("CAPTCHA Debug - Invalid credentials")
+                    _LOGGER.info("CAPTCHA Step - Error indicates invalid credentials (not CAPTCHA)")
                     errors["base"] = "invalid_auth"
             except APIConnectionError:
-                _LOGGER.error("CAPTCHA Debug - Connection error")
+                _LOGGER.info("=== CAPTCHA STEP: Login failed - Connection error ===")
                 errors["base"] = "cannot_connect"
             except Exception as e:
-                _LOGGER.error("CAPTCHA Debug - Unexpected error: %s", e)
+                _LOGGER.info("=== CAPTCHA STEP: Login failed - Unexpected error ===")
+                _LOGGER.info("CAPTCHA Step - Unexpected error: %s", e)
+                _LOGGER.exception("CAPTCHA Step - Full exception traceback:")
                 errors["base"] = "unknown"
         
         # Get CAPTCHA image for display
         # Always fetch a fresh CAPTCHA image - don't reuse old instances
+        _LOGGER.info("=== CAPTCHA STEP: Fetching CAPTCHA image ===")
+        _LOGGER.info("CAPTCHA Step - About to fetch CAPTCHA image for domain: %s", domain)
+        _LOGGER.info("CAPTCHA Step - Has stored API instance before fetch: %s", hasattr(self, '_captcha_api_instance') and self._captcha_api_instance is not None)
+        
         captcha_img = ""
         api_instance = None
         try:
             # Create a fresh API instance for fetching CAPTCHA
             # This ensures we get a new CAPTCHA image and don't reuse stale state
+            _LOGGER.info("CAPTCHA Step - Creating fresh API instance for CAPTCHA fetch")
             api_instance = FusionSolarAPI("", "", domain, None)
             api_instance.captcha_input = None  # Clear any old CAPTCHA input
-            _LOGGER.error("CAPTCHA Debug - Getting fresh CAPTCHA image for domain: %s", domain)
+            _LOGGER.info("CAPTCHA Step - API instance created, captcha_input cleared to: %s", api_instance.captcha_input)
+            _LOGGER.info("CAPTCHA Step - Calling set_captcha_img()")
             await self.hass.async_add_executor_job(api_instance.set_captcha_img)
             captcha_img = api_instance.captcha_img
-            _LOGGER.error("CAPTCHA Debug - CAPTCHA image obtained: %s", "SUCCESS" if captcha_img else "FAILED")
+            _LOGGER.info("CAPTCHA Step - CAPTCHA image fetch result: %s", "SUCCESS" if captcha_img else "FAILED")
             if captcha_img:
-                _LOGGER.error("CAPTCHA Debug - Image length: %d characters", len(captcha_img))
-                _LOGGER.error("CAPTCHA Debug - Image starts with: %s", captcha_img[:50] if len(captcha_img) > 50 else captcha_img)
+                _LOGGER.info("CAPTCHA Step - Image length: %d characters", len(captcha_img))
+                _LOGGER.info("CAPTCHA Step - Image starts with: %s", captcha_img[:50] if len(captcha_img) > 50 else captcha_img)
             else:
-                _LOGGER.error("CAPTCHA Debug - No image data received")
+                _LOGGER.warning("CAPTCHA Step - No image data received")
         except Exception as err:
-            _LOGGER.error("CAPTCHA Debug - Failed to get CAPTCHA image: %s", err)
+            _LOGGER.error("CAPTCHA Step - Failed to get CAPTCHA image: %s", err)
+            _LOGGER.exception("CAPTCHA Step - Exception traceback:")
             captcha_img = ""
         
         # Show credentials form with CAPTCHA
+        _LOGGER.info("=== CAPTCHA STEP: Preparing form display ===")
         if captcha_img:
             # Use exact same format as the old working version
             captcha_html = '<img id="fusion_solar_app_security_captcha" src="' + captcha_img + '"/>'
+            _LOGGER.info("CAPTCHA Step - CAPTCHA image available, creating HTML")
         else:
             captcha_html = '<p><strong>CAPTCHA Image Failed to Load</strong><br/>Please try refreshing the page or check your network connection.</p>'
+            _LOGGER.warning("CAPTCHA Step - No CAPTCHA image, showing error message")
         
-        _LOGGER.error("CAPTCHA Debug - HTML to display: %s", captcha_html[:100] + "..." if len(captcha_html) > 100 else captcha_html)
+        _LOGGER.info("CAPTCHA Step - HTML preview: %s", captcha_html[:100] + "..." if len(captcha_html) > 100 else captcha_html)
         
         # Store the API instance for reuse in login attempt
         # This maintains the session cookies from the CAPTCHA fetch
+        _LOGGER.info("CAPTCHA Step - Storing API instance for reuse in login attempt")
+        _LOGGER.info("CAPTCHA Step - API instance captcha_input when storing: %s", api_instance.captcha_input if api_instance else "N/A")
         self._captcha_api_instance = api_instance
+        _LOGGER.info("=== CAPTCHA STEP: Showing form to user ===")
         
         return self.async_show_form(
             step_id="captcha",

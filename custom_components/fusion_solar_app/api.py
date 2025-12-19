@@ -110,12 +110,18 @@ class FusionSolarAPI:
             "username": self.user
         }
         
-        _LOGGER.debug("captcha_input=%s", self.captcha_input)
+        _LOGGER.info("=== API: login() - Preparing login request ===")
+        _LOGGER.info("API - Current captcha_input value: '%s'", self.captcha_input)
+        _LOGGER.info("API - captcha_input is not None: %s", self.captcha_input is not None)
+        _LOGGER.info("API - captcha_input != '': %s", self.captcha_input != '')
+        
         if self.captcha_input is not None and self.captcha_input != '':
             payload["verifycode"] = self.captcha_input
-            _LOGGER.info("CAPTCHA Debug - Added verifycode to payload: %s", self.captcha_input)
+            _LOGGER.info("API - Added verifycode to payload: '%s'", self.captcha_input)
+        else:
+            _LOGGER.info("API - No verifycode added to payload (captcha_input is None or empty)")
         
-        _LOGGER.info("CAPTCHA Debug - Final payload: %s", payload)
+        _LOGGER.info("API - Final payload (password hidden): %s", {k: v if k != 'password' else '***' for k, v in payload.items()})
         
         headers = {
             "Content-Type": "application/json",
@@ -169,16 +175,19 @@ class FusionSolarAPI:
                 _LOGGER.error("Login failed with error code: %s - %s", error_code, error_msg)
                 
                 if error_code == '411':
-                    _LOGGER.warning("Captcha required.")
-                    _LOGGER.info("CAPTCHA Debug - Manual input provided: '%s'", self.captcha_input)
+                    _LOGGER.info("=== API: login() - Error 411 (CAPTCHA required) ===")
+                    _LOGGER.info("API - Captcha required error received")
+                    _LOGGER.info("API - CAPTCHA code that was sent: '%s'", self.captcha_input)
+                    _LOGGER.info("API - CAPTCHA code is not None: %s", self.captcha_input is not None)
+                    _LOGGER.info("API - CAPTCHA code is not empty: %s", self.captcha_input and self.captcha_input.strip())
                     
                     # If CAPTCHA was provided but still getting 411, it means the CAPTCHA was incorrect
                     if self.captcha_input and self.captcha_input.strip():
-                        _LOGGER.error("CAPTCHA Debug - CAPTCHA was provided but still getting 411 error - CAPTCHA was incorrect")
+                        _LOGGER.warning("API - CAPTCHA was provided ('%s') but still getting 411 error - CAPTCHA was incorrect", self.captcha_input)
                         raise APIAuthError("Incorrect CAPTCHA code provided")
                     else:
                         # No CAPTCHA provided, need to show CAPTCHA form
-                        _LOGGER.info("CAPTCHA Debug - No CAPTCHA provided, raising CAPTCHA error for manual input handling")
+                        _LOGGER.info("API - No CAPTCHA provided, raising CAPTCHA error for manual input handling")
                         raise APIAuthCaptchaError("Login requires Captcha.")
                 elif error_code == '401':
                     raise APIAuthError(f"Invalid credentials: {error_msg}")
@@ -311,19 +320,27 @@ class FusionSolarAPI:
         return cookies_dict
 
     def set_captcha_img(self):
+        _LOGGER.info("=== API: set_captcha_img() called ===")
+        _LOGGER.info("API - Current captcha_input value: %s", self.captcha_input)
+        _LOGGER.info("API - login_host: %s", self.login_host)
+        
         timestampNow = datetime.now().timestamp() * 1000
         captcha_request_url = f"https://{self.login_host}{CAPTCHA_URL}?timestamp={timestampNow}"
-        _LOGGER.error("CAPTCHA Debug - Requesting Captcha at: %s", captcha_request_url)
-        _LOGGER.error("CAPTCHA Debug - Using session cookies: %s", self._get_cookies_safe())
+        _LOGGER.info("API - Requesting CAPTCHA image from: %s", captcha_request_url)
+        _LOGGER.info("API - Using session cookies: %s", self._get_cookies_safe())
+        
         response = self.session.get(captcha_request_url)
-        _LOGGER.error("CAPTCHA Debug - Captcha response status: %d", response.status_code)
+        _LOGGER.info("API - CAPTCHA response status: %d", response.status_code)
+        _LOGGER.info("API - Response headers: %s", dict(response.headers))
         
         if response.status_code == 200:
             self.captcha_img = f"data:image/png;base64,{base64.b64encode(response.content).decode('utf-8')}"
-            _LOGGER.error("CAPTCHA Debug - Captcha image created successfully, length: %d", len(self.captcha_img))
+            _LOGGER.info("API - CAPTCHA image created successfully, length: %d", len(self.captcha_img))
+            _LOGGER.info("API - Image data preview: %s", self.captcha_img[:80] + "..." if len(self.captcha_img) > 80 else self.captcha_img)
         else:
             self.captcha_img = None
-            _LOGGER.error("CAPTCHA Debug - Failed to get captcha image, status: %d", response.status_code)
+            _LOGGER.warning("API - Failed to get CAPTCHA image, status: %d", response.status_code)
+            _LOGGER.warning("API - Response text: %s", response.text[:200] if response.text else "Empty")
 
     def refresh_csrf(self):
         """Refresh CSRF token (roarand) for main API endpoints"""
