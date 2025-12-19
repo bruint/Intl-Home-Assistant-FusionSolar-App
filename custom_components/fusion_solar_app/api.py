@@ -9,7 +9,7 @@ import requests
 import json
 import base64
 from typing import Dict, Optional
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urlparse, quote
 from datetime import datetime, timedelta, timezone
 from .const import DOMAIN, PUBKEY_URL, LOGIN_HEADERS_1_STEP_REFERER, LOGIN_HEADERS_2_STEP_REFERER, LOGIN_VALIDATE_USER_URL, LOGIN_FORM_URL, STATION_LIST_URL, KEEP_ALIVE_URL, CAPTCHA_URL
 from .utils import extract_numeric, encrypt_password, generate_nonce
@@ -655,7 +655,6 @@ class FusionSolarAPI:
             _LOGGER.warning("Using station DN as device DN: %s", device_dn)
         
         # Get real-time data for the device
-        from urllib.parse import quote
         realtime_url = f"https://{self.data_host}/rest/pvms/web/device/v1/device-realtime-data"
         params = {
             "deviceDn": device_dn,
