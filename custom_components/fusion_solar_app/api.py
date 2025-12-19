@@ -62,6 +62,7 @@ class FusionSolarAPI:
         self.last_session_time: datetime | None = None
         self._session_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
+        self.roarand = None  # CSRF token (roarand) needed for station list endpoint
         self.user_id = None  # Dynamic user ID
         self.session = requests.Session()  # Use session for cookie persistence
         
@@ -348,7 +349,7 @@ class FusionSolarAPI:
             _LOGGER.warning("API - Response text: %s", response.text[:200] if response.text else "Empty")
 
     def refresh_csrf(self):
-        """Keep session alive using events endpoint (replaces old CSRF refresh)"""
+        """Keep session alive using events endpoint and get roarand token from keep-alive endpoint"""
         if not self.data_host:
             _LOGGER.warning("Cannot keep session alive: data_host is not set")
             self.connected = False
@@ -359,6 +360,38 @@ class FusionSolarAPI:
         _LOGGER.warning("Keep-Alive - Session cookies: %s", self._get_cookies_safe())
         _LOGGER.warning("Keep-Alive - bspsession cookie: %s", self.bspsession)
         
+        # First, get roarand token from keep-alive endpoint (needed for station list)
+        try:
+            keep_alive_url = f"https://{self.data_host}/rest/neteco/auth/v1/keep-alive"
+            headers = {
+                "accept": "application/json, text/plain, */*",
+                "accept-encoding": "gzip, deflate, br, zstd",
+                "Referer": f"https://{self.data_host}/pvmswebsite/assets/build/index.html"
+            }
+            
+            _LOGGER.warning("Keep-Alive - Getting roarand token from: %s", keep_alive_url)
+            keep_alive_response = self.session.get(keep_alive_url, headers=headers)
+            _LOGGER.warning("Keep-Alive - Token response status: %d", keep_alive_response.status_code)
+            
+            if keep_alive_response.status_code == 200:
+                try:
+                    token_data = keep_alive_response.json()
+                    if 'payload' in token_data:
+                        self.roarand = token_data['payload']
+                        _LOGGER.warning("Keep-Alive - Got roarand token: %s", self.roarand)
+                    elif 'csrfToken' in token_data:
+                        self.roarand = token_data['csrfToken']
+                        _LOGGER.warning("Keep-Alive - Got roarand token (csrfToken): %s", self.roarand)
+                    else:
+                        _LOGGER.warning("Keep-Alive - No token in response, keys: %s", list(token_data.keys()) if isinstance(token_data, dict) else "Not a dict")
+                except ValueError:
+                    _LOGGER.warning("Keep-Alive - Token response is not JSON, status 200 but invalid format")
+            else:
+                _LOGGER.warning("Keep-Alive - Token endpoint returned status %d, will try without token", keep_alive_response.status_code)
+        except Exception as token_err:
+            _LOGGER.warning("Keep-Alive - Failed to get roarand token: %s, will continue without it", token_err)
+        
+        # Then, keep session alive using events endpoint
         try:
             events_url = f"https://{self.data_host}/rest/sysfenw/v1/events"
             params = {
@@ -379,7 +412,7 @@ class FusionSolarAPI:
                 'x-requested-with': 'XMLHttpRequest'
             }
             
-            _LOGGER.warning("Keep-Alive - Requesting from endpoint: %s", events_url)
+            _LOGGER.warning("Keep-Alive - Requesting events endpoint: %s", events_url)
             _LOGGER.warning("Keep-Alive - Request params: %s", params)
             response = self.session.get(events_url, headers=headers, params=params)
             _LOGGER.warning("Keep-Alive - Response status: %d", response.status_code)
@@ -488,6 +521,13 @@ class FusionSolarAPI:
             "x-requested-with": "XMLHttpRequest",
             "x-timezone-offset": "480"
         }
+        
+        # Add roarand token if available (required for station list endpoint)
+        if self.roarand:
+            station_headers["roarand"] = self.roarand
+            _LOGGER.warning("Station List - Adding roarand header: %s", self.roarand)
+        else:
+            _LOGGER.warning("Station List - No roarand token available, request may fail")
         
         
         # Use SG5/INTL timezone (Asia/Singapore)
