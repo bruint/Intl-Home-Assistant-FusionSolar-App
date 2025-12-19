@@ -126,6 +126,18 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
             if data_host:
                 self.api.data_host = data_host
                 _LOGGER.info("Restored data_host from config: %s", data_host)
+                
+                # Validate the restored session by trying to keep it alive
+                # This will also get the roarand token needed for API calls
+                try:
+                    _LOGGER.info("Validating restored session by calling refresh_csrf()")
+                    self.hass.async_add_executor_job(self.api.refresh_csrf).result()
+                    # If refresh_csrf succeeds, session is valid
+                    self.api.connected = True
+                    _LOGGER.info("Session validated successfully - session is active")
+                except Exception as validate_err:
+                    _LOGGER.warning("Session validation failed: %s. Will attempt fresh login on first update.", validate_err)
+                    self.api.connected = False
             else:
                 # If data_host is not in config, don't restore cookies - force fresh login
                 # This handles old configs that don't have data_host stored
@@ -133,11 +145,6 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
                 # Clear the restored cookies and mark as not connected to force fresh login
                 self.api.session.cookies = requests.cookies.RequestsCookieJar()
                 self.api.connected = False
-                return
-            
-            # Don't mark as connected - let first update validate the session
-            # If cookies are expired, the first API call will fail and trigger a fresh login
-            _LOGGER.info("Session cookies restored, will validate on first update")
 
     async def async_update_data(self):
         """Fetch data from API endpoint.
@@ -148,12 +155,28 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
         _LOGGER.info("Coordinator update started - connected: %s, station: %s", self.api.connected, self.api.station)
         try:
             if not self.api.connected:
-                _LOGGER.info("Not connected, attempting login")
-                # Ensure CAPTCHA input is cleared - coordinator should never use stored CAPTCHA codes
-                self.api.captcha_input = None
-                _LOGGER.info("Coordinator - Cleared CAPTCHA input before login attempt (captcha_input: %s)", self.api.captcha_input)
-                await self.hass.async_add_executor_job(self.api.login)
-                _LOGGER.info("Login completed - connected: %s", self.api.connected)
+                # First, try to validate/refresh the existing session before attempting login
+                # This avoids unnecessary CAPTCHA requirements if the session is still valid
+                if self.api.data_host and self.api.session.cookies:
+                    _LOGGER.info("Not connected, but have data_host and cookies - attempting to refresh session")
+                    try:
+                        await self.hass.async_add_executor_job(self.api.refresh_csrf)
+                        # If refresh_csrf succeeds, session is valid
+                        self.api.connected = True
+                        _LOGGER.info("Session refreshed successfully - no login needed")
+                    except Exception as refresh_err:
+                        _LOGGER.warning("Session refresh failed: %s. Will attempt login.", refresh_err)
+                        # Session refresh failed, need to login (but this will require CAPTCHA)
+                        _LOGGER.warning("Login will be required, but CAPTCHA is needed. Integration will be unavailable until reconfigured.")
+                        raise APIAuthCaptchaError("Session expired and login requires CAPTCHA")
+                
+                if not self.api.connected:
+                    _LOGGER.info("Not connected and no valid session, attempting login")
+                    # Ensure CAPTCHA input is cleared - coordinator should never use stored CAPTCHA codes
+                    self.api.captcha_input = None
+                    _LOGGER.info("Coordinator - Cleared CAPTCHA input before login attempt (captcha_input: %s)", self.api.captcha_input)
+                    await self.hass.async_add_executor_job(self.api.login)
+                    _LOGGER.info("Login completed - connected: %s", self.api.connected)
             
             # If we have a session but no station data, retrieve it now
             if self.api.connected and self.api.station is None:
