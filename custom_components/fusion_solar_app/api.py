@@ -30,10 +30,15 @@ class DeviceType(StrEnum):
     SENSOR_TIME = "sensor_time"
 
 DEVICES = [
+    # Real-time sensors (state_class: measurement)
     {"id": "Panel Production Energy", "type": DeviceType.SENSOR_KW, "icon": "mdi:solar-panel"},
     {"id": "Load", "type": DeviceType.SENSOR_KW, "icon": "mdi:home-lightning-bolt"},
     {"id": "Grid Consumption Energy", "type": DeviceType.SENSOR_KW, "icon": "mdi:transmission-tower-import"},
     {"id": "Return to Grid Energy", "type": DeviceType.SENSOR_KW, "icon": "mdi:transmission-tower-export"},
+    # Cumulative sensors (state_class: total_increasing)
+    {"id": "Panel Production Energy Over Time", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
+    {"id": "Grid Consumption Energy Over Time", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-import"},
+    {"id": "Return to Grid Energy Over Time", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-export"},
 ]
 
 @dataclass
@@ -614,6 +619,72 @@ class FusionSolarAPI:
             _LOGGER.error("Station not set. Cannot get devices without station information.")
             return []
         
+        # Get cumulative energy values from station-detail endpoint
+        try:
+            station_detail_url = f"https://{self.data_host}/rest/pvms/web/station/v1/overview/station-detail"
+            params = {
+                "stationDn": self.station,
+                "_": int(time.time() * 1000)
+            }
+            
+            headers = {
+                "accept": "application/json, text/javascript, */*; q=0.01",
+                "accept-language": "en-GB,en;q=0.7",
+                "cache-control": "no-cache",
+                "origin": f"https://{self.data_host}",
+                "pragma": "no-cache",
+                "referer": f"https://{self.data_host}/pvmswebsite/assets/build/index.html",
+                "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+                "x-non-renewal-session": "true",
+                "x-requested-with": "XMLHttpRequest",
+                "x-timezone-offset": "480",
+            }
+            if self.roarand:
+                headers["roarand"] = self.roarand
+            
+            _LOGGER.warning("=== STATION DETAIL: Starting request for cumulative values ===")
+            _LOGGER.warning("Station detail - URL: %s", station_detail_url)
+            _LOGGER.warning("Station detail - Params: %s", params)
+            
+            station_detail_response = self.session.get(station_detail_url, headers=headers, params=params)
+            
+            _LOGGER.warning("Station detail - Response status: %d", station_detail_response.status_code)
+            
+            if station_detail_response.status_code == 200:
+                try:
+                    station_detail_data = station_detail_response.json()
+                    _LOGGER.warning("=== STATION DETAIL: Full JSON response ===")
+                    _LOGGER.warning("Station detail - Full response: %s", json.dumps(station_detail_data, indent=2))
+                    
+                    if "data" in station_detail_data and "realNrgKpi" in station_detail_data["data"]:
+                        real_nrg_kpi = station_detail_data["data"]["realNrgKpi"]
+                        daily_nrg = real_nrg_kpi.get("dailyNrg", {})
+                        
+                        _LOGGER.warning("Station detail - Daily energy data: %s", json.dumps(daily_nrg, indent=2))
+                        
+                        # Extract cumulative values
+                        if "pvNrg" in daily_nrg:
+                            output["panel_production_energy_over_time"] = float(daily_nrg["pvNrg"])
+                            _LOGGER.warning("Station detail - Panel Production Energy Over Time: %s kWh", output["panel_production_energy_over_time"])
+                        
+                        if "buyNrg" in daily_nrg:
+                            output["grid_consumption_energy_over_time"] = float(daily_nrg["buyNrg"])
+                            _LOGGER.warning("Station detail - Grid Consumption Energy Over Time: %s kWh", output["grid_consumption_energy_over_time"])
+                        
+                        if "onGridNrg" in daily_nrg:
+                            output["return_to_grid_energy_over_time"] = float(daily_nrg["onGridNrg"])
+                            _LOGGER.warning("Station detail - Return to Grid Energy Over Time: %s kWh", output["return_to_grid_energy_over_time"])
+                    else:
+                        _LOGGER.warning("Station detail - No realNrgKpi.dailyNrg found in response")
+                except (ValueError, TypeError) as json_err:
+                    _LOGGER.warning("Station detail - Failed to parse JSON: %s", json_err)
+            else:
+                _LOGGER.warning("Station detail - Request failed with status %d", station_detail_response.status_code)
+        except Exception as station_detail_err:
+            _LOGGER.warning("Station detail - Exception occurred: %s", station_detail_err)
+            import traceback
+            _LOGGER.warning("Station detail - Traceback: %s", traceback.format_exc())
+        
         # Get real-time data from energy-flow endpoint
         energy_flow_url = f"https://{self.data_host}/rest/pvms/web/station/v1/overview/energy-flow"
         params = {
@@ -649,10 +720,15 @@ class FusionSolarAPI:
         _LOGGER.warning("Energy flow - Response headers: %s", dict(response.headers))
 
         output = {
+            # Real-time values
             "panel_production_energy": 0.0,
             "load": 0.0,
             "grid_consumption_energy": 0.0,
             "return_to_grid_energy": 0.0,
+            # Cumulative values (from station-detail)
+            "panel_production_energy_over_time": 0.0,
+            "grid_consumption_energy_over_time": 0.0,
+            "return_to_grid_energy_over_time": 0.0,
         }
 
         if response.status_code != 200:

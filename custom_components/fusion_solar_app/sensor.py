@@ -132,15 +132,11 @@ class FusionSolarSensor(CoordinatorEntity, SensorEntity):
         if self.device.device_type == DeviceType.SENSOR_TIME:
             return None
         elif self.device.device_type == DeviceType.SENSOR_KWH:
-            # Use TOTAL_INCREASING for real-time energy sensors
-            if "(Real-time)" in self.device.device_id:
-                return SensorStateClass.TOTAL_INCREASING
-            else:
-                return SensorStateClass.TOTAL
-        elif self.device.device_type == DeviceType.SENSOR_KW:
-            # For energy sensors (device_class: energy), use TOTAL_INCREASING
-            # This is required for energy dashboard compatibility
+            # Cumulative energy sensors (Over Time) use TOTAL_INCREASING
             return SensorStateClass.TOTAL_INCREASING
+        elif self.device.device_type == DeviceType.SENSOR_KW:
+            # Real-time power/energy sensors use MEASUREMENT
+            return SensorStateClass.MEASUREMENT
         else:
             return SensorStateClass.MEASUREMENT
 
