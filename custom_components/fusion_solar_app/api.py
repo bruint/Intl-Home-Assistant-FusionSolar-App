@@ -150,47 +150,47 @@ class FusionSolarAPI:
         redirect_url = None
 
         if 'respMultiRegionName' in login_response and login_response['respMultiRegionName']:
-                redirect_info = login_response['respMultiRegionName'][1]  # Extract redirect URL
-                redirect_url = f"https://{self.login_host}{redirect_info}"
-            elif 'redirectURL' in login_response and login_response['redirectURL']:
-                redirect_info = login_response['redirectURL']  # Extract redirect URL
-                # Handle both absolute and relative URLs
-                if redirect_info.startswith('http'):
-                    redirect_url = redirect_info
-                else:
-                    redirect_url = f"https://{self.login_host}{redirect_info}"
+            redirect_info = login_response['respMultiRegionName'][1]  # Extract redirect URL
+            redirect_url = f"https://{self.login_host}{redirect_info}"
+        elif 'redirectURL' in login_response and login_response['redirectURL']:
+            redirect_info = login_response['redirectURL']  # Extract redirect URL
+            # Handle both absolute and relative URLs
+            if redirect_info.startswith('http'):
+                redirect_url = redirect_info
             else:
-                _LOGGER.warning("Login response did not include redirect information.")
-                self.connected = False
+                redirect_url = f"https://{self.login_host}{redirect_info}"
+        else:
+            _LOGGER.warning("Login response did not include redirect information.")
+            self.connected = False
 
-                if 'errorCode' in login_response and login_response['errorCode']:
-                    error_code = login_response['errorCode']
-                    error_msg = login_response.get('errorMsg', 'Unknown error')
-                    _LOGGER.error("Login failed with error code: %s - %s", error_code, error_msg)
+            if 'errorCode' in login_response and login_response['errorCode']:
+                error_code = login_response['errorCode']
+                error_msg = login_response.get('errorMsg', 'Unknown error')
+                _LOGGER.error("Login failed with error code: %s - %s", error_code, error_msg)
+                
+                if error_code == '411':
+                    _LOGGER.warning("Captcha required.")
+                    _LOGGER.info("CAPTCHA Debug - Manual input provided: '%s'", self.captcha_input)
                     
-                    if error_code == '411':
-                        _LOGGER.warning("Captcha required.")
-                        _LOGGER.info("CAPTCHA Debug - Manual input provided: '%s'", self.captcha_input)
-                        
-                        # If CAPTCHA was provided but still getting 411, it means the CAPTCHA was incorrect
-                        if self.captcha_input and self.captcha_input.strip():
-                            _LOGGER.error("CAPTCHA Debug - CAPTCHA was provided but still getting 411 error - CAPTCHA was incorrect")
-                            raise APIAuthError("Incorrect CAPTCHA code provided")
-                        else:
-                            # No CAPTCHA provided, need to show CAPTCHA form
-                            _LOGGER.info("CAPTCHA Debug - No CAPTCHA provided, raising CAPTCHA error for manual input handling")
-                            raise APIAuthCaptchaError("Login requires Captcha.")
-                    elif error_code == '401':
-                        raise APIAuthError(f"Invalid credentials: {error_msg}")
+                    # If CAPTCHA was provided but still getting 411, it means the CAPTCHA was incorrect
+                    if self.captcha_input and self.captcha_input.strip():
+                        _LOGGER.error("CAPTCHA Debug - CAPTCHA was provided but still getting 411 error - CAPTCHA was incorrect")
+                        raise APIAuthError("Incorrect CAPTCHA code provided")
                     else:
-                        raise APIAuthError(f"Login failed: {error_code} - {error_msg}")
+                        # No CAPTCHA provided, need to show CAPTCHA form
+                        _LOGGER.info("CAPTCHA Debug - No CAPTCHA provided, raising CAPTCHA error for manual input handling")
+                        raise APIAuthCaptchaError("Login requires Captcha.")
+                elif error_code == '401':
+                    raise APIAuthError(f"Invalid credentials: {error_msg}")
                 else:
-                    login_form_url = f"https://{self.login_host}{LOGIN_FORM_URL}"
-                    _LOGGER.debug("Redirecting to Login Form: %s", login_form_url)
-                    response = self.session.get(login_form_url)
-                    _LOGGER.debug("Login Form Response: %s", response.text)
-                    _LOGGER.debug("Login Form Response headers: %s", response.headers)
-                    raise APIAuthError("Login response did not include redirect information.")
+                    raise APIAuthError(f"Login failed: {error_code} - {error_msg}")
+            else:
+                login_form_url = f"https://{self.login_host}{LOGIN_FORM_URL}"
+                _LOGGER.debug("Redirecting to Login Form: %s", login_form_url)
+                response = self.session.get(login_form_url)
+                _LOGGER.debug("Login Form Response: %s", response.text)
+                _LOGGER.debug("Login Form Response headers: %s", response.headers)
+                raise APIAuthError("Login response did not include redirect information.")
 
         redirect_headers = {
             "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
