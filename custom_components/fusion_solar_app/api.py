@@ -320,22 +320,23 @@ class FusionSolarAPI:
         return cookies_dict
 
     def set_captcha_img(self):
-        _LOGGER.info("=== API: set_captcha_img() called ===")
-        _LOGGER.info("API - Current captcha_input value: %s", self.captcha_input)
-        _LOGGER.info("API - login_host: %s", self.login_host)
+        _LOGGER.warning("=== API: set_captcha_img() called ===")
+        _LOGGER.warning("API - Current captcha_input value: %s", self.captcha_input)
+        _LOGGER.warning("API - login_host: %s", self.login_host)
         
         timestampNow = datetime.now().timestamp() * 1000
         captcha_request_url = f"https://{self.login_host}{CAPTCHA_URL}?timestamp={timestampNow}"
-        _LOGGER.info("API - Requesting CAPTCHA image from: %s", captcha_request_url)
-        _LOGGER.info("API - Using session cookies: %s", self._get_cookies_safe())
+        _LOGGER.warning("API - Requesting CAPTCHA image from: %s", captcha_request_url)
+        _LOGGER.warning("API - Using session cookies: %s", self._get_cookies_safe())
         
         response = self.session.get(captcha_request_url)
-        _LOGGER.info("API - CAPTCHA response status: %d", response.status_code)
-        _LOGGER.info("API - Response headers: %s", dict(response.headers))
+        _LOGGER.warning("API - CAPTCHA response status: %d", response.status_code)
+        _LOGGER.warning("API - Response headers: %s", dict(response.headers))
         
         if response.status_code == 200:
             self.captcha_img = f"data:image/png;base64,{base64.b64encode(response.content).decode('utf-8')}"
-            _LOGGER.info("API - CAPTCHA image created successfully, length: %d", len(self.captcha_img))
+            _LOGGER.warning("API - CAPTCHA image created successfully, length: %d", len(self.captcha_img))
+            _LOGGER.warning("API - CAPTCHA image is base64 data URL: %s", self.captcha_img.startswith("data:image"))
             _LOGGER.info("API - Image data preview: %s", self.captcha_img[:80] + "..." if len(self.captcha_img) > 80 else self.captcha_img)
         else:
             self.captcha_img = None
