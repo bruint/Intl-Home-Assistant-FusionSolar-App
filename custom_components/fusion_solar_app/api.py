@@ -619,6 +619,19 @@ class FusionSolarAPI:
             _LOGGER.error("Station not set. Cannot get devices without station information.")
             return []
         
+        # Initialize output dictionary first
+        output = {
+            # Real-time values
+            "panel_production_energy": 0.0,
+            "load": 0.0,
+            "grid_consumption_energy": 0.0,
+            "return_to_grid_energy": 0.0,
+            # Cumulative values (from station-detail)
+            "panel_production_energy_over_time": 0.0,
+            "grid_consumption_energy_over_time": 0.0,
+            "return_to_grid_energy_over_time": 0.0,
+        }
+        
         # Get cumulative energy values from station-detail endpoint
         try:
             station_detail_url = f"https://{self.data_host}/rest/pvms/web/station/v1/overview/station-detail"
@@ -718,18 +731,6 @@ class FusionSolarAPI:
         _LOGGER.warning("Energy flow - Response status: %d", response.status_code)
         _LOGGER.warning("Energy flow - Response URL: %s", response.url)
         _LOGGER.warning("Energy flow - Response headers: %s", dict(response.headers))
-
-        output = {
-            # Real-time values
-            "panel_production_energy": 0.0,
-            "load": 0.0,
-            "grid_consumption_energy": 0.0,
-            "return_to_grid_energy": 0.0,
-            # Cumulative values (from station-detail)
-            "panel_production_energy_over_time": 0.0,
-            "grid_consumption_energy_over_time": 0.0,
-            "return_to_grid_energy_over_time": 0.0,
-        }
 
         if response.status_code != 200:
             _LOGGER.error("Energy flow request failed with status %s", response.status_code)

@@ -69,8 +69,10 @@ class FusionSolarSensor(CoordinatorEntity, SensorEntity):
         """Return device class."""
         # https://developers.home-assistant.io/docs/core/entity/sensor/#available-device-classes
         if self.device.device_type == DeviceType.SENSOR_KW:
-            return SensorDeviceClass.ENERGY
+            # Real-time power sensors use POWER device class
+            return SensorDeviceClass.POWER
         elif self.device.device_type == DeviceType.SENSOR_KWH:
+            # Cumulative energy sensors use ENERGY device class
             return SensorDeviceClass.ENERGY
         elif self.device.device_type == DeviceType.SENSOR_TIME:
             return SensorDeviceClass.TIMESTAMP
@@ -117,8 +119,10 @@ class FusionSolarSensor(CoordinatorEntity, SensorEntity):
     def native_unit_of_measurement(self) -> str | None:
         """Return unit of measurement."""
         if self.device.device_type == DeviceType.SENSOR_KW:
-            return UnitOfEnergy.KILO_WATT_HOUR
+            # Real-time power sensors use kW
+            return UnitOfPower.KILO_WATT
         elif self.device.device_type == DeviceType.SENSOR_KWH:
+            # Cumulative energy sensors use kWh
             return UnitOfEnergy.KILO_WATT_HOUR
         elif self.device.device_type == DeviceType.SENSOR_TIME:
             return ""
