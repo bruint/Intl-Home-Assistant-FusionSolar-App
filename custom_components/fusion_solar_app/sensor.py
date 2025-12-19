@@ -69,7 +69,7 @@ class FusionSolarSensor(CoordinatorEntity, SensorEntity):
         """Return device class."""
         # https://developers.home-assistant.io/docs/core/entity/sensor/#available-device-classes
         if self.device.device_type == DeviceType.SENSOR_KW:
-            return SensorDeviceClass.POWER
+            return SensorDeviceClass.ENERGY
         elif self.device.device_type == DeviceType.SENSOR_KWH:
             return SensorDeviceClass.ENERGY
         elif self.device.device_type == DeviceType.SENSOR_TIME:
@@ -137,6 +137,9 @@ class FusionSolarSensor(CoordinatorEntity, SensorEntity):
                 return SensorStateClass.TOTAL_INCREASING
             else:
                 return SensorStateClass.TOTAL
+        elif self.device.device_type == DeviceType.SENSOR_KW:
+            # For energy dashboard compatibility with kW unit
+            return SensorStateClass.TOTAL_INCREASING
         else:
             return SensorStateClass.MEASUREMENT
 
