@@ -386,8 +386,29 @@ class FusionSolarAPI:
             _LOGGER.warning("Keep-Alive - Response URL: %s", response.url)
             
             if response.status_code == 200:
-                _LOGGER.warning("Keep-Alive: SUCCESS")
-                return
+                # Check if response is HTML (session expired)
+                content_type = response.headers.get('content-type', '').lower()
+                if 'text/html' in content_type or (response.text and response.text.strip().startswith('<')):
+                    _LOGGER.warning("Keep-Alive returned HTML instead of JSON - session may have expired")
+                    _LOGGER.debug("Response text (first 500 chars): %s", response.text[:500] if response.text else "Empty")
+                    self.connected = False
+                    raise APIAuthError("Session expired - keep-alive returned HTML")
+                
+                # Verify we got a valid JSON response (should have relations array)
+                try:
+                    data = response.json()
+                    if 'relations' in data:
+                        _LOGGER.warning("Keep-Alive: SUCCESS (session alive)")
+                        return
+                    else:
+                        _LOGGER.warning("Keep-Alive: Unexpected response structure: %s", list(data.keys()) if isinstance(data, dict) else "Not a dict")
+                        # Still consider it successful if status is 200
+                        return
+                except ValueError as json_err:
+                    _LOGGER.warning("Keep-Alive response is not valid JSON: %s", json_err)
+                    _LOGGER.debug("Response text (first 500 chars): %s", response.text[:500] if response.text else "Empty")
+                    self.connected = False
+                    raise APIAuthError(f"Session expired - keep-alive returned invalid JSON: {json_err}")
             else:
                 _LOGGER.error("Keep-Alive failed with status %d", response.status_code)
                 _LOGGER.error("Keep-Alive - Response text (first 500 chars): %s", response.text[:500] if response.text else "Empty")
