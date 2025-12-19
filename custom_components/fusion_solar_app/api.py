@@ -681,10 +681,12 @@ class FusionSolarAPI:
                             _LOGGER.warning("Station detail - Panel Production Energy Over Time: %s kWh", output["panel_production_energy_over_time"])
                         
                         if "buyNrg" in daily_nrg:
+                            # buyNrg is grid consumption (importing from grid)
                             output["grid_consumption_energy_over_time"] = float(daily_nrg["buyNrg"])
                             _LOGGER.warning("Station detail - Grid Consumption Energy Over Time: %s kWh", output["grid_consumption_energy_over_time"])
                         
                         if "onGridNrg" in daily_nrg:
+                            # onGridNrg is return to grid (exporting to grid)
                             output["return_to_grid_energy_over_time"] = float(daily_nrg["onGridNrg"])
                             _LOGGER.warning("Station detail - Return to Grid Energy Over Time: %s kWh", output["return_to_grid_energy_over_time"])
                     else:
@@ -840,28 +842,29 @@ class FusionSolarAPI:
                 
                 _LOGGER.warning("Energy flow - Processing link %s: from=%s, to=%s, label='%s', value='%s'", link_id, from_node, to_node, label, value_str)
                 
-                # Grid consumption (buy/import): link from meter (node 2) to grid (node 3)
+                # Grid values: link from meter (node 2) to grid (node 3)
+                # "buy.power" label means importing, but when positive value, we're actually exporting
                 if from_node == "2" and to_node == "3" and "buy.power" in label:
                     if value_str:
                         try:
                             numeric_value = extract_numeric(value_str)
                             if numeric_value:
-                                # Buy power is consumption (importing from grid)
-                                output["grid_consumption_energy"] = float(numeric_value)
-                                _LOGGER.warning("Energy flow - Extracted Grid Consumption from link (buy.power): %s kW", output["grid_consumption_energy"])
+                                # When buy.power has a value, we're exporting (return to grid)
+                                output["return_to_grid_energy"] = float(numeric_value)
+                                _LOGGER.warning("Energy flow - Extracted Return to Grid from link (buy.power): %s kW", output["return_to_grid_energy"])
                         except (ValueError, TypeError) as conv_err:
-                            _LOGGER.warning("Energy flow - Could not convert grid consumption link value '%s': %s", value_str, conv_err)
-                # Grid return (sell/export): check for sell/export link
-                elif from_node == "2" and to_node == "3" and ("sell" in label.lower() or "export" in label.lower()):
+                            _LOGGER.warning("Energy flow - Could not convert grid link value '%s': %s", value_str, conv_err)
+                # Grid consumption (sell/import): check for sell/import link
+                elif from_node == "2" and to_node == "3" and ("sell" in label.lower() or "import" in label.lower()):
                     if value_str:
                         try:
                             numeric_value = extract_numeric(value_str)
                             if numeric_value:
-                                # Sell/export power is return to grid
-                                output["return_to_grid_energy"] = float(numeric_value)
-                                _LOGGER.warning("Energy flow - Extracted Return to Grid from link (sell/export): %s kW", output["return_to_grid_energy"])
+                                # Sell/import power is consumption from grid
+                                output["grid_consumption_energy"] = float(numeric_value)
+                                _LOGGER.warning("Energy flow - Extracted Grid Consumption from link (sell/import): %s kW", output["grid_consumption_energy"])
                         except (ValueError, TypeError) as conv_err:
-                            _LOGGER.warning("Energy flow - Could not convert grid return link value '%s': %s", value_str, conv_err)
+                            _LOGGER.warning("Energy flow - Could not convert grid consumption link value '%s': %s", value_str, conv_err)
         else:
             _LOGGER.warning("Energy flow - No flow data found. Response structure: %s", list(data.keys()) if isinstance(data, dict) else "Not a dict")
             if "data" in data:
