@@ -117,15 +117,19 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
             except Exception as e:
                 _LOGGER.warning("Failed to rebuild session cookies: %s", e)
             
-            # Restore data_host from config if available, otherwise use login_host as fallback
+            # Restore data_host from config if available
             data_host = config_entry.data.get("data_host")
             if data_host:
                 self.api.data_host = data_host
                 _LOGGER.info("Restored data_host from config: %s", data_host)
             else:
-                # Fallback to login_host for backwards compatibility (old configs)
-                self.api.data_host = self.login_host
-                _LOGGER.warning("data_host not found in config, using login_host as fallback: %s", self.login_host)
+                # If data_host is not in config, don't restore cookies - force fresh login
+                # This handles old configs that don't have data_host stored
+                _LOGGER.warning("data_host not found in config - cookies may be invalid. Will attempt fresh login.")
+                # Clear the restored cookies and mark as not connected to force fresh login
+                self.api.session.cookies = requests.cookies.RequestsCookieJar()
+                self.api.connected = False
+                return
             
             # Don't mark as connected - let first update validate the session
             # If cookies are expired, the first API call will fail and trigger a fresh login

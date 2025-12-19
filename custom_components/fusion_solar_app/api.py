@@ -233,6 +233,7 @@ class FusionSolarAPI:
                 self.last_session_time = datetime.now(timezone.utc)
                 
                 # Get user ID and CSRF tokens
+                # Note: refresh_csrf() requires data_host to be set, which we just set above
                 self._get_user_id()
                 try:
                     self.refresh_csrf()
@@ -332,7 +333,7 @@ class FusionSolarAPI:
         if not self.data_host:
             _LOGGER.warning("Cannot refresh CSRF: data_host is not set")
             self.connected = False
-            return
+            raise APIAuthError("Cannot refresh CSRF: data_host is not set. Login may have failed or session expired.")
         
         if self.csrf is None or datetime.now() - self.csrf_time > timedelta(minutes=5):
             _LOGGER.info("CSRF token needs refresh")
