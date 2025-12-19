@@ -97,7 +97,7 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                     api.user = user_input[CONF_USERNAME]
                     api.pwd = user_input[CONF_PASSWORD]
                     api.captcha_input = user_input.get(CAPTCHA_INPUT, "")
-                    _LOGGER.error("CAPTCHA Debug - Reusing API instance with session cookies: %s", dict(api.session.cookies))
+                    _LOGGER.error("CAPTCHA Debug - Reusing API instance with session cookies: %s", api._get_cookies_safe())
                 else:
                     # Fallback: create new API instance if no stored instance
                     api = FusionSolarAPI(
@@ -117,7 +117,7 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._abort_if_unique_id_configured()
                 
                 # Store session cookies in config data for coordinator to use
-                session_cookies = dict(api.session.cookies)
+                session_cookies = api._get_cookies_safe()
                 full_data["session_cookies"] = session_cookies
                 _LOGGER.error("CAPTCHA Debug - Storing session cookies in config: %s", session_cookies)
                 
@@ -258,7 +258,7 @@ class FusionSolarOptionsFlowHandler(OptionsFlow):
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialize options flow."""
-        self.config_entry = config_entry
+        super().__init__()
         self.options = dict(config_entry.options)
 
     async def async_step_init(self, user_input=None):
