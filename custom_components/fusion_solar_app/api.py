@@ -596,83 +596,138 @@ class FusionSolarAPI:
             raise APIAuthError(f"Failed to parse station list JSON: {json_err}")
 
     def get_devices(self) -> list[Device]:
-        """Get devices - only returns Panel Production Power sensor."""
+        """Get devices - only returns Panel Production Power sensor using real-time data endpoint."""
         if not self.data_host:
             _LOGGER.error("Cannot get devices: data_host is not set")
             raise APIAuthError("Data host not set. Login may have failed.")
         
         try:
-            self.refresh_csrf()  # Keep session alive
+            self.refresh_csrf()  # Keep session alive and get roarand token
         except APIAuthError as e:
             _LOGGER.error("Session keep-alive failed, cannot get devices: %s", e)
             raise
 
-        headers = {
-            "Accept": "application/json",
-            "Accept-Encoding": "gzip, deflate, br, zstd",
-            "Accept-Language": "en-GB,en;q=0.9",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        }
-        
         if self.station is None:
             _LOGGER.error("Station not set. Cannot get devices without station information.")
             return []
         
-        params = {"stationDn": unquote(self.station)}
+        # Get device list to find device DN
+        # First, try to get devices from station
+        device_dn = None
+        try:
+            device_list_url = f"https://{self.data_host}/rest/pvms/web/device/v1/device-list"
+            headers = {
+                "accept": "application/json, text/javascript, */*; q=0.01",
+                "accept-language": "en-GB,en;q=0.7",
+                "cache-control": "no-cache",
+                "content-type": "application/json",
+                "origin": f"https://{self.data_host}",
+                "pragma": "no-cache",
+                "referer": f"https://{self.data_host}/pvmswebsite/assets/build/index.html",
+                "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+                "x-non-renewal-session": "true",
+                "x-requested-with": "XMLHttpRequest",
+            }
+            if self.roarand:
+                headers["roarand"] = self.roarand
+            
+            device_list_payload = {
+                "stationDn": self.station,
+                "pageNo": 1,
+                "pageSize": 10,
+            }
+            
+            _LOGGER.warning("Getting device list from: %s", device_list_url)
+            device_list_response = self.session.post(device_list_url, json=device_list_payload, headers=headers)
+            
+            if device_list_response.status_code == 200:
+                device_list_data = device_list_response.json()
+                if "data" in device_list_data and "list" in device_list_data["data"] and len(device_list_data["data"]["list"]) > 0:
+                    # Get first device DN (usually the inverter)
+                    device_dn = device_list_data["data"]["list"][0].get("dn")
+                    _LOGGER.warning("Found device DN: %s", device_dn)
+        except Exception as device_list_err:
+            _LOGGER.warning("Failed to get device list: %s. Will try using station DN directly.", device_list_err)
         
-        data_access_url = f"https://{self.data_host}/rest/pvms/web/station/v1/overview/energy-flow"
-        _LOGGER.debug("Getting Data at: %s", data_access_url)
-        response = self.session.get(data_access_url, headers=headers, params=params)
+        # If we couldn't get device DN from device list, try using station DN directly
+        if not device_dn:
+            device_dn = self.station
+            _LOGGER.warning("Using station DN as device DN: %s", device_dn)
+        
+        # Get real-time data for the device
+        from urllib.parse import quote
+        realtime_url = f"https://{self.data_host}/rest/pvms/web/device/v1/device-realtime-data"
+        params = {
+            "deviceDn": device_dn,
+            "displayAccessModel": "true",
+            "_": int(time.time() * 1000)
+        }
+        
+        headers = {
+            "accept": "application/json",
+            "accept-language": "en-GB,en;q=0.7",
+            "cache-control": "no-cache",
+            "origin": f"https://{self.data_host}",
+            "pragma": "no-cache",
+            "referer": f"https://{self.data_host}/pvmswebsite/assets/build/index.html",
+            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+            "x-requested-with": "XMLHttpRequest",
+        }
+        if self.roarand:
+            headers["roarand"] = self.roarand
+        
+        _LOGGER.warning("Getting real-time data from: %s", realtime_url)
+        _LOGGER.warning("Real-time data params: %s", params)
+        response = self.session.get(realtime_url, headers=headers, params=params)
 
         output = {
             "panel_production_power": 0.0,
         }
 
         if response.status_code != 200:
-            _LOGGER.error("Energy flow request failed with status %s", response.status_code)
-            _LOGGER.debug("Response text (first 500 chars): %s", response.text[:500] if response.text else "Empty")
+            _LOGGER.error("Real-time data request failed with status %s", response.status_code)
+            _LOGGER.error("Response text (first 500 chars): %s", response.text[:500] if response.text else "Empty")
             self.connected = False
-            raise APIAuthError(f"Energy flow request failed with status {response.status_code}")
+            raise APIAuthError(f"Real-time data request failed with status {response.status_code}")
 
         # Check if response is empty
         if not response.text or not response.text.strip():
-            _LOGGER.error("Energy flow response is empty")
+            _LOGGER.error("Real-time data response is empty")
             self.connected = False
-            raise APIAuthError("Energy flow response is empty")
+            raise APIAuthError("Real-time data response is empty")
 
         # Check if response is HTML (session expired)
         content_type = response.headers.get('content-type', '').lower()
         if 'text/html' in content_type or (response.text and response.text.strip().startswith('<')):
-            _LOGGER.error("Energy flow returned HTML instead of JSON - session may have expired")
+            _LOGGER.error("Real-time data returned HTML instead of JSON - session may have expired")
             _LOGGER.debug("Response text (first 500 chars): %s", response.text[:500] if response.text else "Empty")
             self.connected = False
-            raise APIAuthError("Session expired - energy flow returned HTML")
+            raise APIAuthError("Session expired - real-time data returned HTML")
 
         try:
             data = response.json()
-            _LOGGER.debug("Get Data Response: %s", data)
+            _LOGGER.debug("Real-time data response: %s", data)
         except ValueError as json_err:
-            _LOGGER.error("Error processing response: JSON format invalid! %s", json_err)
+            _LOGGER.error("Error processing real-time data response: JSON format invalid! %s", json_err)
             _LOGGER.error("Response text (first 1000 chars): %s", response.text[:1000] if response.text else "Empty")
             self.connected = False
-            raise APIAuthError(f"Error processing response: JSON format invalid! {json_err}")
+            raise APIAuthError(f"Error processing real-time data response: JSON format invalid! {json_err}")
 
-        if "data" not in data or "flow" not in data["data"]:
-            _LOGGER.error("Error on data structure!")
-            raise APIDataStructureError("Error on data structure!")
-
-        # Extract panel production power from nodes
-        flow_data_nodes = data["data"]["flow"].get("nodes", [])
+        # Extract Active power (signal ID 10018) from signals
+        if "data" in data and isinstance(data["data"], list) and len(data["data"]) > 0:
+            signals_data = data["data"][0].get("signals", [])
+            for signal in signals_data:
+                if signal.get("id") == 10018:  # Active power
+                    active_power = signal.get("realValue", "0")
+                    try:
+                        output["panel_production_power"] = float(active_power)
+                        _LOGGER.warning("Found Active power (signal 10018): %s kW", output["panel_production_power"])
+                        break
+                    except (ValueError, TypeError):
+                        _LOGGER.warning("Could not convert Active power value: %s", active_power)
         
-        for node in flow_data_nodes:
-            label = node.get("name", "")
-            value = node.get("description", {}).get("value", "")
-            
-            if label == "neteco.pvms.devTypeLangKey.string":
-                output["panel_production_power"] = extract_numeric(value) or 0.0
-                break
-
-        _LOGGER.debug("Panel Production Power: %s kW", output["panel_production_power"])
+        if output["panel_production_power"] == 0.0:
+            _LOGGER.warning("Active power not found in real-time data. Response structure: %s", list(data.keys()) if isinstance(data, dict) else "Not a dict")
 
         """Get devices on api."""
         return [
