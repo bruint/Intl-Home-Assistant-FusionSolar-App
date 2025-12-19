@@ -360,34 +360,35 @@ class FusionSolarAPI:
         _LOGGER.warning("Keep-Alive - Session cookies: %s", self._get_cookies_safe())
         _LOGGER.warning("Keep-Alive - bspsession cookie: %s", self.bspsession)
         
-        # First, get roarand token from keep-alive endpoint (needed for station list)
+        # First, get roarand token from session endpoint (needed for station list)
         try:
-            keep_alive_url = f"https://{self.data_host}/rest/neteco/auth/v1/keep-alive"
+            session_url = f"https://{self.data_host}/unisess/v1/auth/session"
             headers = {
-                "accept": "application/json, text/plain, */*",
-                "accept-encoding": "gzip, deflate, br, zstd",
-                "Referer": f"https://{self.data_host}/pvmswebsite/assets/build/index.html"
+                "accept": "application/json",
+                "accept-language": "en-GB,en;q=0.7",
+                "cache-control": "no-cache",
+                "pragma": "no-cache",
+                "referer": f"https://{self.data_host}/pvmswebsite/assets/build/index.html",
+                "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+                "x-requested-with": "XMLHttpRequest"
             }
             
-            _LOGGER.warning("Keep-Alive - Getting roarand token from: %s", keep_alive_url)
-            keep_alive_response = self.session.get(keep_alive_url, headers=headers)
-            _LOGGER.warning("Keep-Alive - Token response status: %d", keep_alive_response.status_code)
+            _LOGGER.warning("Keep-Alive - Getting roarand token from: %s", session_url)
+            session_response = self.session.get(session_url, headers=headers)
+            _LOGGER.warning("Keep-Alive - Token response status: %d", session_response.status_code)
             
-            if keep_alive_response.status_code == 200:
+            if session_response.status_code == 200:
                 try:
-                    token_data = keep_alive_response.json()
-                    if 'payload' in token_data:
-                        self.roarand = token_data['payload']
-                        _LOGGER.warning("Keep-Alive - Got roarand token: %s", self.roarand)
-                    elif 'csrfToken' in token_data:
+                    token_data = session_response.json()
+                    if 'csrfToken' in token_data:
                         self.roarand = token_data['csrfToken']
-                        _LOGGER.warning("Keep-Alive - Got roarand token (csrfToken): %s", self.roarand)
+                        _LOGGER.warning("Keep-Alive - Got roarand token: %s", self.roarand)
                     else:
-                        _LOGGER.warning("Keep-Alive - No token in response, keys: %s", list(token_data.keys()) if isinstance(token_data, dict) else "Not a dict")
+                        _LOGGER.warning("Keep-Alive - No csrfToken in response, keys: %s", list(token_data.keys()) if isinstance(token_data, dict) else "Not a dict")
                 except ValueError:
                     _LOGGER.warning("Keep-Alive - Token response is not JSON, status 200 but invalid format")
             else:
-                _LOGGER.warning("Keep-Alive - Token endpoint returned status %d, will try without token", keep_alive_response.status_code)
+                _LOGGER.warning("Keep-Alive - Token endpoint returned status %d, will try without token", session_response.status_code)
         except Exception as token_err:
             _LOGGER.warning("Keep-Alive - Failed to get roarand token: %s, will continue without it", token_err)
         
