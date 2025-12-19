@@ -32,7 +32,8 @@ class DeviceType(StrEnum):
 DEVICES = [
     {"id": "Panel Production Energy", "type": DeviceType.SENSOR_KW, "icon": "mdi:solar-panel"},
     {"id": "Load", "type": DeviceType.SENSOR_KW, "icon": "mdi:home-lightning-bolt"},
-    {"id": "Grid", "type": DeviceType.SENSOR_KW, "icon": "mdi:transmission-tower"},
+    {"id": "Grid Consumption Energy", "type": DeviceType.SENSOR_KW, "icon": "mdi:transmission-tower-import"},
+    {"id": "Return to Grid Energy", "type": DeviceType.SENSOR_KW, "icon": "mdi:transmission-tower-export"},
 ]
 
 @dataclass
@@ -650,7 +651,8 @@ class FusionSolarAPI:
         output = {
             "panel_production_energy": 0.0,
             "load": 0.0,
-            "grid": 0.0,
+            "grid_consumption_energy": 0.0,
+            "return_to_grid_energy": 0.0,
         }
 
         if response.status_code != 200:
@@ -749,8 +751,8 @@ class FusionSolarAPI:
                         except (ValueError, TypeError) as conv_err:
                             _LOGGER.warning("Energy flow - Could not convert node 5 value '%s': %s", value_str, conv_err)
             
-            # Extract Grid value from links
-            # Positive = exporting to grid, Negative = importing from grid
+            # Extract Grid values from links
+            # Split into consumption (import) and return (export)
             for link in links:
                 link_id = link.get("id", "")
                 from_node = link.get("fromNode", "")
@@ -761,29 +763,28 @@ class FusionSolarAPI:
                 
                 _LOGGER.warning("Energy flow - Processing link %s: from=%s, to=%s, label='%s', value='%s'", link_id, from_node, to_node, label, value_str)
                 
-                # Grid power: link from meter (node 2) to grid (node 3)
-                # "buy.power" means importing (negative), but we want positive = export
+                # Grid consumption (buy/import): link from meter (node 2) to grid (node 3)
                 if from_node == "2" and to_node == "3" and "buy.power" in label:
                     if value_str:
                         try:
                             numeric_value = extract_numeric(value_str)
                             if numeric_value:
-                                # Negate buy power so positive = export, negative = import
-                                output["grid"] = -float(numeric_value)
-                                _LOGGER.warning("Energy flow - Extracted Grid from link (buy.power): %s kW (negative = import)", output["grid"])
+                                # Buy power is consumption (importing from grid)
+                                output["grid_consumption_energy"] = float(numeric_value)
+                                _LOGGER.warning("Energy flow - Extracted Grid Consumption from link (buy.power): %s kW", output["grid_consumption_energy"])
                         except (ValueError, TypeError) as conv_err:
-                            _LOGGER.warning("Energy flow - Could not convert grid link value '%s': %s", value_str, conv_err)
-                # Check for sell/export link (if it exists)
+                            _LOGGER.warning("Energy flow - Could not convert grid consumption link value '%s': %s", value_str, conv_err)
+                # Grid return (sell/export): check for sell/export link
                 elif from_node == "2" and to_node == "3" and ("sell" in label.lower() or "export" in label.lower()):
                     if value_str:
                         try:
                             numeric_value = extract_numeric(value_str)
                             if numeric_value:
-                                # Positive value for export
-                                output["grid"] = float(numeric_value)
-                                _LOGGER.warning("Energy flow - Extracted Grid from link (sell/export): %s kW (positive = export)", output["grid"])
+                                # Sell/export power is return to grid
+                                output["return_to_grid_energy"] = float(numeric_value)
+                                _LOGGER.warning("Energy flow - Extracted Return to Grid from link (sell/export): %s kW", output["return_to_grid_energy"])
                         except (ValueError, TypeError) as conv_err:
-                            _LOGGER.warning("Energy flow - Could not convert grid link value '%s': %s", value_str, conv_err)
+                            _LOGGER.warning("Energy flow - Could not convert grid return link value '%s': %s", value_str, conv_err)
         else:
             _LOGGER.warning("Energy flow - No flow data found. Response structure: %s", list(data.keys()) if isinstance(data, dict) else "Not a dict")
             if "data" in data:
