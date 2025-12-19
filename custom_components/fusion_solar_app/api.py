@@ -39,6 +39,8 @@ DEVICES = [
     {"id": "Panel Production Energy Over Time", "type": DeviceType.SENSOR_KWH, "icon": "mdi:solar-panel"},
     {"id": "Grid Consumption Energy Over Time", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-import"},
     {"id": "Return to Grid Energy Over Time", "type": DeviceType.SENSOR_KWH, "icon": "mdi:transmission-tower-export"},
+    # Metadata sensors
+    {"id": "Last Data Update", "type": DeviceType.SENSOR_TIME, "icon": "mdi:clock-outline"},
 ]
 
 @dataclass
@@ -620,6 +622,8 @@ class FusionSolarAPI:
             return []
         
         # Initialize output dictionary first
+        # Set timestamp for when data was last updated
+        last_update_time = datetime.now(timezone.utc)
         output = {
             # Real-time values
             "panel_production_energy": 0.0,
@@ -630,6 +634,8 @@ class FusionSolarAPI:
             "panel_production_energy_over_time": 0.0,
             "grid_consumption_energy_over_time": 0.0,
             "return_to_grid_energy_over_time": 0.0,
+            # Metadata
+            "last_data_update": last_update_time,
         }
         
         # Get cumulative energy values from station-detail endpoint
@@ -937,6 +943,11 @@ class FusionSolarAPI:
     def get_device_value(self, device_id: str, device_type: DeviceType, output: Dict[str, Optional[float | str]], default: int = 0) -> float | int | datetime:
         """Get device random value."""
         if device_type == DeviceType.SENSOR_TIME:
+            # Check if it's the last data update sensor
+            if device_id == "Last Data Update" and "last_data_update" in output:
+                _LOGGER.debug("%s: Value being returned is datetime: %s", device_id, output["last_data_update"])
+                return output["last_data_update"]
+            # Otherwise use session time
             _LOGGER.debug("%s: Value being returned is datetime: %s", device_id, self.last_session_time)
             return self.last_session_time
 
