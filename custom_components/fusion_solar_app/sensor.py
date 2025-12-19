@@ -138,8 +138,9 @@ class FusionSolarSensor(CoordinatorEntity, SensorEntity):
             else:
                 return SensorStateClass.TOTAL
         elif self.device.device_type == DeviceType.SENSOR_KW:
-            # Real-time power measurement, not cumulative
-            return SensorStateClass.MEASUREMENT
+            # For energy sensors (device_class: energy), use TOTAL_INCREASING
+            # This is required for energy dashboard compatibility
+            return SensorStateClass.TOTAL_INCREASING
         else:
             return SensorStateClass.MEASUREMENT
 
