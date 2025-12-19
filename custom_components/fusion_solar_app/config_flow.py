@@ -141,6 +141,11 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                 session_cookies = api._get_cookies_safe()
                 full_data["session_cookies"] = session_cookies
                 full_data["data_host"] = api.data_host
+                # Don't store CAPTCHA input - CAPTCHA codes are single-use and shouldn't be stored
+                # Remove it if it was in the input data
+                if CAPTCHA_INPUT in full_data:
+                    _LOGGER.info("CAPTCHA Step - Removing CAPTCHA_INPUT from config data (single-use codes shouldn't be stored)")
+                    del full_data[CAPTCHA_INPUT]
                 _LOGGER.error("CAPTCHA Debug - Storing session cookies in config: %s", session_cookies)
                 _LOGGER.info("Storing data_host in config: %s", api.data_host)
                 

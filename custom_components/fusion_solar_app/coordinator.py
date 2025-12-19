@@ -41,7 +41,9 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
         self.user = config_entry.data[CONF_USERNAME]
         self.pwd = config_entry.data[CONF_PASSWORD]
         self.login_host = config_entry.data[FUSION_SOLAR_HOST]
-        self.captcha_input = config_entry.data.get(CAPTCHA_INPUT, None)
+        # Don't use stored CAPTCHA input - CAPTCHA codes are single-use and shouldn't be reused
+        # The coordinator should never use CAPTCHA codes for automatic login
+        self.captcha_input = None
 
         # set variables from options.  You need a default here incase options have not been set
         self.poll_interval = config_entry.options.get(
@@ -63,7 +65,9 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
         )
 
         # Initialise your api here
-        self.api = FusionSolarAPI(user=self.user, pwd=self.pwd, login_host=self.login_host, captcha_input=self.captcha_input)
+        # Never pass CAPTCHA input to the coordinator's API instance
+        # CAPTCHA codes are single-use and only valid during config flow
+        self.api = FusionSolarAPI(user=self.user, pwd=self.pwd, login_host=self.login_host, captcha_input=None)
         
         # Restore session cookies from config flow if available
         session_cookies = config_entry.data.get("session_cookies", {})
@@ -145,6 +149,9 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
         try:
             if not self.api.connected:
                 _LOGGER.info("Not connected, attempting login")
+                # Ensure CAPTCHA input is cleared - coordinator should never use stored CAPTCHA codes
+                self.api.captcha_input = None
+                _LOGGER.info("Coordinator - Cleared CAPTCHA input before login attempt (captcha_input: %s)", self.api.captcha_input)
                 await self.hass.async_add_executor_job(self.api.login)
                 _LOGGER.info("Login completed - connected: %s", self.api.connected)
             
@@ -177,13 +184,33 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
                 devices=[]
             )
         except APIAuthError as err:
-            _LOGGER.warning("Authentication failed, attempting to re-login: %s", err)
+            _LOGGER.warning("Authentication failed: %s", err)
+            # Check if this is a CAPTCHA-related error
+            if "CAPTCHA" in str(err) or "captcha" in str(err).lower():
+                _LOGGER.warning("CAPTCHA required - cannot auto-login. User must reconfigure integration.")
+                self.api.connected = False
+                return FusonSolarAPIData(
+                    controller_name=self.login_host,
+                    devices=[]
+                )
+            
+            # For other auth errors, try one re-login attempt
+            _LOGGER.warning("Attempting one re-login attempt")
             self.api.connected = False
+            # Clear any stale CAPTCHA input before retry
+            self.api.captcha_input = None
+            _LOGGER.info("Coordinator - Cleared CAPTCHA input before re-login (captcha_input: %s)", self.api.captcha_input)
             try:
                 await self.hass.async_add_executor_job(self.api.login)
                 devices = await self.hass.async_add_executor_job(self.api.get_devices)
             except APIAuthCaptchaError:
                 _LOGGER.warning("CAPTCHA required for re-login. Integration will retry on next update.")
+                return FusonSolarAPIData(
+                    controller_name=self.login_host,
+                    devices=[]
+                )
+            except APIAuthError as retry_err:
+                _LOGGER.warning("Re-login also failed: %s. User may need to reconfigure.", retry_err)
                 return FusonSolarAPIData(
                     controller_name=self.login_host,
                     devices=[]
