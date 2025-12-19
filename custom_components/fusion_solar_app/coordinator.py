@@ -127,17 +127,9 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
                 self.api.data_host = data_host
                 _LOGGER.info("Restored data_host from config: %s", data_host)
                 
-                # Validate the restored session by trying to keep it alive
-                # This will also get the roarand token needed for API calls
-                try:
-                    _LOGGER.info("Validating restored session by calling refresh_csrf()")
-                    self.hass.async_add_executor_job(self.api.refresh_csrf).result()
-                    # If refresh_csrf succeeds, session is valid
-                    self.api.connected = True
-                    _LOGGER.info("Session validated successfully - session is active")
-                except Exception as validate_err:
-                    _LOGGER.warning("Session validation failed: %s. Will attempt fresh login on first update.", validate_err)
-                    self.api.connected = False
+                # Don't validate synchronously in __init__ - do it in async_update_data
+                # This avoids blocking the coordinator initialization
+                _LOGGER.info("Session cookies and data_host restored, will validate on first update")
             else:
                 # If data_host is not in config, don't restore cookies - force fresh login
                 # This handles old configs that don't have data_host stored
