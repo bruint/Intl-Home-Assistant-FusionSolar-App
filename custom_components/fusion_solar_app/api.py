@@ -631,9 +631,10 @@ class FusionSolarAPI:
             if self.roarand:
                 headers["roarand"] = self.roarand
             
+            # Try different payload formats - some APIs use curPage/pageSize, others use pageNo/pageSize
             device_list_payload = {
                 "stationDn": self.station,
-                "pageNo": 1,
+                "curPage": 1,
                 "pageSize": 10,
             }
             
@@ -654,19 +655,63 @@ class FusionSolarAPI:
                     _LOGGER.warning("Device list - Full response: %s", json.dumps(device_list_data, indent=2))
                     
                     if "data" in device_list_data:
-                        if "list" in device_list_data["data"]:
-                            device_list = device_list_data["data"]["list"]
-                            _LOGGER.warning("Device list - Found %d devices", len(device_list))
+                        data_section = device_list_data["data"]
+                        
+                        # Check if data is a list directly
+                        if isinstance(data_section, list) and len(data_section) > 0:
+                            device_list = data_section
+                            _LOGGER.warning("Device list - Found %d devices (data is list)", len(device_list))
                             
-                            if len(device_list) > 0:
-                                # Get first device DN (usually the inverter)
+                            # Look for inverter devices first
+                            for device in device_list:
+                                device_type = device.get("devTypeId", "").lower() if device.get("devTypeId") else ""
+                                device_dn_candidate = device.get("dn")
+                                _LOGGER.warning("Device list - Checking device: dn=%s, type=%s", device_dn_candidate, device_type)
+                                
+                                # Prefer inverter devices (type 1 or contains "inverter")
+                                if "inverter" in device_type or device.get("devTypeId") == "1" or (not device_dn and device_dn_candidate):
+                                    device_dn = device_dn_candidate
+                                    _LOGGER.warning("Device list - Selected device DN: %s", device_dn)
+                                    _LOGGER.warning("Device list - Device details: %s", json.dumps(device, indent=2))
+                                    break
+                            
+                            # If no device selected yet, use first one
+                            if not device_dn and len(device_list) > 0:
                                 device_dn = device_list[0].get("dn")
-                                _LOGGER.warning("Device list - Found device DN: %s", device_dn)
+                                _LOGGER.warning("Device list - Using first device DN: %s", device_dn)
                                 _LOGGER.warning("Device list - First device details: %s", json.dumps(device_list[0], indent=2))
+                                
+                        elif isinstance(data_section, dict):
+                            # Check for list key
+                            if "list" in data_section:
+                                device_list = data_section["list"]
+                                _LOGGER.warning("Device list - Found %d devices (data.list)", len(device_list))
+                                
+                                if len(device_list) > 0:
+                                    # Look for inverter devices first
+                                    for device in device_list:
+                                        device_type = device.get("devTypeId", "").lower() if device.get("devTypeId") else ""
+                                        device_dn_candidate = device.get("dn")
+                                        _LOGGER.warning("Device list - Checking device: dn=%s, type=%s", device_dn_candidate, device_type)
+                                        
+                                        # Prefer inverter devices
+                                        if "inverter" in device_type or device.get("devTypeId") == "1" or (not device_dn and device_dn_candidate):
+                                            device_dn = device_dn_candidate
+                                            _LOGGER.warning("Device list - Selected device DN: %s", device_dn)
+                                            _LOGGER.warning("Device list - Device details: %s", json.dumps(device, indent=2))
+                                            break
+                                    
+                                    # If no device selected yet, use first one
+                                    if not device_dn:
+                                        device_dn = device_list[0].get("dn")
+                                        _LOGGER.warning("Device list - Using first device DN: %s", device_dn)
+                                        _LOGGER.warning("Device list - First device details: %s", json.dumps(device_list[0], indent=2))
+                                else:
+                                    _LOGGER.warning("Device list - Device list is empty")
                             else:
-                                _LOGGER.warning("Device list - Device list is empty")
+                                _LOGGER.warning("Device list - No 'list' key in data. Data keys: %s", list(data_section.keys()))
                         else:
-                            _LOGGER.warning("Device list - No 'list' key in data. Data keys: %s", list(device_list_data["data"].keys()) if isinstance(device_list_data["data"], dict) else "Not a dict")
+                            _LOGGER.warning("Device list - Data is neither list nor dict: %s", type(data_section))
                     else:
                         _LOGGER.warning("Device list - No 'data' key in response. Response keys: %s", list(device_list_data.keys()) if isinstance(device_list_data, dict) else "Not a dict")
                 except ValueError as json_err:
