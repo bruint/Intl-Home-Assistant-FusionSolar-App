@@ -611,178 +611,143 @@ class FusionSolarAPI:
             _LOGGER.error("Station not set. Cannot get devices without station information.")
             return []
         
-        # Get device DN from station list (devices are included in station list response)
-        device_dn = None
-        try:
-            _LOGGER.warning("=== EXTRACTING DEVICE FROM STATION LIST ===")
-            station_data = self.get_station_list()
-            
-            _LOGGER.warning("=== STATION LIST: Full JSON response for device extraction ===")
-            _LOGGER.warning("Station list - Full response: %s", json.dumps(station_data, indent=2))
-            
-            if station_data and "data" in station_data and "list" in station_data["data"]:
-                station_list = station_data["data"]["list"]
-                _LOGGER.warning("Station list - Found %d stations", len(station_list))
-                
-                if len(station_list) > 0:
-                    # Get the first station (should match self.station)
-                    station = station_list[0]
-                    _LOGGER.warning("Station list - Processing station: %s", json.dumps(station, indent=2))
-                    
-                    # Check if station has devices directly
-                    if "devices" in station:
-                        devices = station["devices"]
-                        _LOGGER.warning("Station list - Found %d devices in station", len(devices) if isinstance(devices, list) else "Not a list")
-                        
-                        if isinstance(devices, list) and len(devices) > 0:
-                            # Look for inverter devices first
-                            for device in devices:
-                                device_type = device.get("devTypeId", "").lower() if device.get("devTypeId") else ""
-                                device_dn_candidate = device.get("dn")
-                                _LOGGER.warning("Station list - Checking device: dn=%s, type=%s", device_dn_candidate, device_type)
-                                
-                                # Prefer inverter devices (type 1 or contains "inverter")
-                                if "inverter" in device_type or device.get("devTypeId") == "1" or (not device_dn and device_dn_candidate):
-                                    device_dn = device_dn_candidate
-                                    _LOGGER.warning("Station list - Selected device DN: %s", device_dn)
-                                    _LOGGER.warning("Station list - Device details: %s", json.dumps(device, indent=2))
-                                    break
-                            
-                            # If no device selected yet, use first one
-                            if not device_dn:
-                                device_dn = devices[0].get("dn")
-                                _LOGGER.warning("Station list - Using first device DN: %s", device_dn)
-                                _LOGGER.warning("Station list - First device details: %s", json.dumps(devices[0], indent=2))
-                    else:
-                        _LOGGER.warning("Station list - Station does not have 'devices' key. Station keys: %s", list(station.keys()))
-                else:
-                    _LOGGER.warning("Station list - Station list is empty")
-            else:
-                _LOGGER.warning("Station list - Invalid station list structure. Response keys: %s", list(station_data.keys()) if isinstance(station_data, dict) else "Not a dict")
-        except Exception as station_err:
-            _LOGGER.warning("Station list - Exception occurred while extracting device: %s", station_err)
-            import traceback
-            _LOGGER.warning("Station list - Traceback: %s", traceback.format_exc())
-        
-        # If we couldn't get device DN from station list, try using station DN directly
-        if not device_dn:
-            device_dn = self.station
-            _LOGGER.warning("Using station DN as device DN (fallback): %s", device_dn)
-        
-        # Get real-time data for the device
-        realtime_url = f"https://{self.data_host}/rest/pvms/web/device/v1/device-realtime-data"
+        # Get real-time data from energy-flow endpoint
+        energy_flow_url = f"https://{self.data_host}/rest/pvms/web/station/v1/overview/energy-flow"
         params = {
-            "deviceDn": device_dn,
-            "displayAccessModel": "true",
+            "stationDn": self.station,
             "_": int(time.time() * 1000)
         }
         
         headers = {
-            "accept": "application/json",
+            "accept": "application/json, text/javascript, */*; q=0.01",
             "accept-language": "en-GB,en;q=0.7",
             "cache-control": "no-cache",
             "origin": f"https://{self.data_host}",
             "pragma": "no-cache",
             "referer": f"https://{self.data_host}/pvmswebsite/assets/build/index.html",
             "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+            "x-non-renewal-session": "true",
             "x-requested-with": "XMLHttpRequest",
+            "x-timezone-offset": "480",
         }
         if self.roarand:
             headers["roarand"] = self.roarand
         
-        _LOGGER.warning("=== REAL-TIME DATA: Starting request ===")
-        _LOGGER.warning("Real-time data - URL: %s", realtime_url)
-        _LOGGER.warning("Real-time data - Params: %s", params)
-        _LOGGER.warning("Real-time data - Headers: %s", headers)
-        _LOGGER.warning("Real-time data - Device DN: %s", device_dn)
+        _LOGGER.warning("=== ENERGY FLOW: Starting request ===")
+        _LOGGER.warning("Energy flow - URL: %s", energy_flow_url)
+        _LOGGER.warning("Energy flow - Params: %s", params)
+        _LOGGER.warning("Energy flow - Headers: %s", headers)
+        _LOGGER.warning("Energy flow - Station DN: %s", self.station)
         
-        response = self.session.get(realtime_url, headers=headers, params=params)
+        response = self.session.get(energy_flow_url, headers=headers, params=params)
 
-        _LOGGER.warning("Real-time data - Response status: %d", response.status_code)
-        _LOGGER.warning("Real-time data - Response URL: %s", response.url)
-        _LOGGER.warning("Real-time data - Response headers: %s", dict(response.headers))
+        _LOGGER.warning("Energy flow - Response status: %d", response.status_code)
+        _LOGGER.warning("Energy flow - Response URL: %s", response.url)
+        _LOGGER.warning("Energy flow - Response headers: %s", dict(response.headers))
 
         output = {
             "panel_production_power": 0.0,
         }
 
         if response.status_code != 200:
-            _LOGGER.error("Real-time data request failed with status %s", response.status_code)
+            _LOGGER.error("Energy flow request failed with status %s", response.status_code)
             _LOGGER.error("Response text (first 1000 chars): %s", response.text[:1000] if response.text else "Empty")
             self.connected = False
-            raise APIAuthError(f"Real-time data request failed with status {response.status_code}")
+            raise APIAuthError(f"Energy flow request failed with status {response.status_code}")
 
         # Check if response is empty
         if not response.text or not response.text.strip():
-            _LOGGER.error("Real-time data response is empty")
+            _LOGGER.error("Energy flow response is empty")
             self.connected = False
-            raise APIAuthError("Real-time data response is empty")
+            raise APIAuthError("Energy flow response is empty")
 
         # Check if response is HTML (session expired)
         content_type = response.headers.get('content-type', '').lower()
         if 'text/html' in content_type or (response.text and response.text.strip().startswith('<')):
-            _LOGGER.error("Real-time data returned HTML instead of JSON - session may have expired")
+            _LOGGER.error("Energy flow returned HTML instead of JSON - session may have expired")
             _LOGGER.error("Response text (first 500 chars): %s", response.text[:500] if response.text else "Empty")
             self.connected = False
-            raise APIAuthError("Session expired - real-time data returned HTML")
+            raise APIAuthError("Session expired - energy flow returned HTML")
 
         try:
             data = response.json()
-            _LOGGER.warning("=== REAL-TIME DATA: Full JSON response ===")
-            _LOGGER.warning("Real-time data - Full response: %s", json.dumps(data, indent=2))
+            _LOGGER.warning("=== ENERGY FLOW: Full JSON response ===")
+            _LOGGER.warning("Energy flow - Full response: %s", json.dumps(data, indent=2))
         except ValueError as json_err:
-            _LOGGER.error("Error processing real-time data response: JSON format invalid! %s", json_err)
+            _LOGGER.error("Error processing energy flow response: JSON format invalid! %s", json_err)
             _LOGGER.error("Response text (first 1000 chars): %s", response.text[:1000] if response.text else "Empty")
             self.connected = False
-            raise APIAuthError(f"Error processing real-time data response: JSON format invalid! {json_err}")
+            raise APIAuthError(f"Error processing energy flow response: JSON format invalid! {json_err}")
 
-        # Extract Active power by matching signal name
-        _LOGGER.warning("=== REAL-TIME DATA: Extracting Active power ===")
-        if "data" in data and isinstance(data["data"], list) and len(data["data"]) > 0:
-            _LOGGER.warning("Real-time data - Found data array with %d items", len(data["data"]))
+        # Extract Active power from energy flow nodes
+        _LOGGER.warning("=== ENERGY FLOW: Extracting Active power ===")
+        if "data" in data and "flow" in data["data"] and "nodes" in data["data"]["flow"]:
+            nodes = data["data"]["flow"]["nodes"]
+            _LOGGER.warning("Energy flow - Found %d nodes", len(nodes))
             
-            # Check all items in data array for signals
-            for idx, data_item in enumerate(data["data"]):
-                _LOGGER.warning("Real-time data - Processing data item %d: %s", idx, list(data_item.keys()) if isinstance(data_item, dict) else "Not a dict")
+            # Try multiple sources for Active power:
+            # 1. First node (solar panels) - description.value
+            # 2. Inverter node - deviceTips.ACTIVE_POWER
+            # 3. Inverter node - customAttr.10018
+            
+            for idx, node in enumerate(nodes):
+                node_name = node.get("name", "")
+                node_id = node.get("id", "")
+                _LOGGER.warning("Energy flow - Processing node %d: id=%s, name='%s'", idx, node_id, node_name)
                 
-                if isinstance(data_item, dict) and "signals" in data_item:
-                    signals_data = data_item.get("signals", [])
-                    _LOGGER.warning("Real-time data - Found %d signals in item %d", len(signals_data), idx)
+                # Check first node (solar panels) for production power
+                if node_id == "0" and node_name == "neteco.pvms.devTypeLangKey.string":
+                    description = node.get("description", {})
+                    value_str = description.get("value", "")
+                    _LOGGER.warning("Energy flow - Node 0 (solar panels) value: %s", value_str)
                     
-                    # Log all signal names for debugging
-                    signal_names = [sig.get("name", "Unknown") for sig in signals_data]
-                    _LOGGER.warning("Real-time data - Available signal names: %s", signal_names)
-                    
-                    # Search for "Active power" by name
-                    for signal in signals_data:
-                        signal_name = signal.get("name", "")
-                        signal_id = signal.get("id", "")
-                        signal_value = signal.get("realValue", "")
-                        
-                        _LOGGER.warning("Real-time data - Checking signal: id=%s, name='%s', value=%s", signal_id, signal_name, signal_value)
-                        
-                        if signal_name == "Active power":
-                            _LOGGER.warning("Real-time data - Found Active power signal!")
-                            _LOGGER.warning("Real-time data - Signal details: %s", json.dumps(signal, indent=2))
-                            
-                            try:
-                                output["panel_production_power"] = float(signal_value)
-                                _LOGGER.warning("Real-time data - Active power extracted: %s kW", output["panel_production_power"])
+                    if value_str:
+                        # Extract numeric value from "4.577 kW" format
+                        try:
+                            numeric_value = extract_numeric(value_str)
+                            if numeric_value:
+                                output["panel_production_power"] = float(numeric_value)
+                                _LOGGER.warning("Energy flow - Extracted Active power from node 0: %s kW", output["panel_production_power"])
                                 break
-                            except (ValueError, TypeError) as conv_err:
-                                _LOGGER.error("Real-time data - Could not convert Active power value '%s': %s", signal_value, conv_err)
-                    else:
-                        continue  # Continue outer loop if we found Active power
-                    break  # Break outer loop if we found Active power
-                else:
-                    _LOGGER.warning("Real-time data - Item %d does not contain signals", idx)
+                        except (ValueError, TypeError) as conv_err:
+                            _LOGGER.warning("Energy flow - Could not convert node 0 value '%s': %s", value_str, conv_err)
+                
+                # Check inverter node for Active power
+                elif "inverter" in node_name.lower() or node_id == "1":
+                    _LOGGER.warning("Energy flow - Found inverter node: %s", json.dumps(node, indent=2))
+                    
+                    # Try deviceTips.ACTIVE_POWER first
+                    device_tips = node.get("deviceTips", {})
+                    if "ACTIVE_POWER" in device_tips:
+                        active_power_str = device_tips["ACTIVE_POWER"]
+                        _LOGGER.warning("Energy flow - Found ACTIVE_POWER in deviceTips: %s", active_power_str)
+                        try:
+                            output["panel_production_power"] = float(active_power_str)
+                            _LOGGER.warning("Energy flow - Extracted Active power from deviceTips: %s kW", output["panel_production_power"])
+                            break
+                        except (ValueError, TypeError) as conv_err:
+                            _LOGGER.warning("Energy flow - Could not convert deviceTips ACTIVE_POWER '%s': %s", active_power_str, conv_err)
+                    
+                    # Try customAttr.10018
+                    custom_attr = node.get("customAttr", {})
+                    if "10018" in custom_attr:
+                        active_power_str = custom_attr["10018"]
+                        _LOGGER.warning("Energy flow - Found 10018 in customAttr: %s", active_power_str)
+                        try:
+                            output["panel_production_power"] = float(active_power_str)
+                            _LOGGER.warning("Energy flow - Extracted Active power from customAttr.10018: %s kW", output["panel_production_power"])
+                            break
+                        except (ValueError, TypeError) as conv_err:
+                            _LOGGER.warning("Energy flow - Could not convert customAttr.10018 '%s': %s", active_power_str, conv_err)
         else:
-            _LOGGER.warning("Real-time data - No data array found or empty. Response keys: %s", list(data.keys()) if isinstance(data, dict) else "Not a dict")
+            _LOGGER.warning("Energy flow - No flow.nodes found. Response structure: %s", list(data.keys()) if isinstance(data, dict) else "Not a dict")
+            if "data" in data:
+                _LOGGER.warning("Energy flow - Data keys: %s", list(data["data"].keys()) if isinstance(data["data"], dict) else "Not a dict")
         
         if output["panel_production_power"] == 0.0:
-            _LOGGER.warning("Real-time data - Active power not found or is 0.0. Final output: %s", output)
+            _LOGGER.warning("Energy flow - Active power not found or is 0.0. Final output: %s", output)
         else:
-            _LOGGER.warning("Real-time data - Successfully extracted Active power: %s kW", output["panel_production_power"])
+            _LOGGER.warning("Energy flow - Successfully extracted Active power: %s kW", output["panel_production_power"])
 
         """Get devices on api."""
         return [
