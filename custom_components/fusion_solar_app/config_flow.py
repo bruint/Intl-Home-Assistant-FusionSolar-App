@@ -116,10 +116,12 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                 await self.async_set_unique_id(info.get("title"))
                 self._abort_if_unique_id_configured()
                 
-                # Store session cookies in config data for coordinator to use
+                # Store session cookies and data_host in config data for coordinator to use
                 session_cookies = api._get_cookies_safe()
                 full_data["session_cookies"] = session_cookies
+                full_data["data_host"] = api.data_host
                 _LOGGER.error("CAPTCHA Debug - Storing session cookies in config: %s", session_cookies)
+                _LOGGER.info("Storing data_host in config: %s", api.data_host)
                 
                 return self.async_create_entry(title=info["title"], data=full_data)
                 
@@ -212,7 +214,19 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                 _LOGGER.info("Reconfigure - login successful")
                 
                 # If we get here, login was successful
-                info = {"title": f"Fusion Solar App Integration"}
+                # Store updated session cookies and data_host
+                session_cookies = api._get_cookies_safe()
+                updated_data = {**config_entry.data, **user_input}
+                updated_data["session_cookies"] = session_cookies
+                updated_data["data_host"] = api.data_host
+                _LOGGER.info("Reconfigure - storing updated data_host: %s", api.data_host)
+                
+                return self.async_update_reload_and_abort(
+                    config_entry,
+                    unique_id=config_entry.unique_id,
+                    data=updated_data,
+                    reason="reconfigure_successful",
+                )
             except APIAuthCaptchaError:
                 _LOGGER.exception("Captcha failed, redirecting to Credentials screen")
                 self._input_data = user_input  # Store the original user data
@@ -233,13 +247,6 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                 import traceback
                 _LOGGER.error("Full traceback: %s", traceback.format_exc())
                 errors["base"] = "unknown"
-            else:
-                return self.async_update_reload_and_abort(
-                    config_entry,
-                    unique_id=config_entry.unique_id,
-                    data={**config_entry.data, **user_input},
-                    reason="reconfigure_successful",
-                )
         return self.async_show_form(
             step_id="reconfigure",
             data_schema=vol.Schema(

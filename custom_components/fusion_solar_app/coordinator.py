@@ -116,11 +116,20 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
                 )
             except Exception as e:
                 _LOGGER.warning("Failed to rebuild session cookies: %s", e)
-            # Set data_host to the login host for API calls
-            self.api.data_host = self.login_host
-            # Mark as connected since we have a valid session
-            self.api.connected = True
-            # Note: Station data will be retrieved in first async_update_data call
+            
+            # Restore data_host from config if available, otherwise use login_host as fallback
+            data_host = config_entry.data.get("data_host")
+            if data_host:
+                self.api.data_host = data_host
+                _LOGGER.info("Restored data_host from config: %s", data_host)
+            else:
+                # Fallback to login_host for backwards compatibility (old configs)
+                self.api.data_host = self.login_host
+                _LOGGER.warning("data_host not found in config, using login_host as fallback: %s", self.login_host)
+            
+            # Don't mark as connected - let first update validate the session
+            # If cookies are expired, the first API call will fail and trigger a fresh login
+            _LOGGER.info("Session cookies restored, will validate on first update")
 
     async def async_update_data(self):
         """Fetch data from API endpoint.
