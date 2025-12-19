@@ -115,9 +115,9 @@ class FusionSolarSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_unit_of_measurement(self) -> str | None:
-        """Return unit of power."""
+        """Return unit of measurement."""
         if self.device.device_type == DeviceType.SENSOR_KW:
-            return UnitOfPower.KILO_WATT
+            return UnitOfEnergy.KILO_WATT_HOUR
         elif self.device.device_type == DeviceType.SENSOR_KWH:
             return UnitOfEnergy.KILO_WATT_HOUR
         elif self.device.device_type == DeviceType.SENSOR_TIME:
