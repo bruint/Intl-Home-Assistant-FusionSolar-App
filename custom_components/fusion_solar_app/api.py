@@ -234,9 +234,19 @@ class FusionSolarAPI:
                 
                 # Get user ID and CSRF tokens
                 self._get_user_id()
-                self.refresh_csrf()
+                try:
+                    self.refresh_csrf()
+                except APIAuthError as csrf_err:
+                    _LOGGER.error("CSRF refresh failed during login: %s", csrf_err)
+                    self.connected = False
+                    raise
                 
-                station_data = self.get_station_list()
+                try:
+                    station_data = self.get_station_list()
+                except APIAuthError as station_err:
+                    _LOGGER.error("Failed to get station list during login: %s", station_err)
+                    self.connected = False
+                    raise
                 if station_data and "data" in station_data and "list" in station_data["data"] and len(station_data["data"]["list"]) > 0:
                     self.station = station_data["data"]["list"][0]["dn"]
                     _LOGGER.info("Station set to: %s", self.station)
@@ -319,6 +329,11 @@ class FusionSolarAPI:
         _LOGGER.info("Refresh CSRF called - Current CSRF: %s, Time since last refresh: %s", 
                      self.csrf, datetime.now() - self.csrf_time if self.csrf_time else "Never")
         
+        if not self.data_host:
+            _LOGGER.warning("Cannot refresh CSRF: data_host is not set")
+            self.connected = False
+            return
+        
         if self.csrf is None or datetime.now() - self.csrf_time > timedelta(minutes=5):
             _LOGGER.info("CSRF token needs refresh")
             endpoint = f"https://{self.data_host}/rest/neteco/auth/v1/keep-alive"
@@ -336,10 +351,17 @@ class FusionSolarAPI:
                 if response.status_code == 200:
                     # Check if response is HTML (session expired)
                     content_type = response.headers.get('content-type', '').lower()
-                    if 'text/html' in content_type or response.text.strip().startswith('<'):
+                    if 'text/html' in content_type or (response.text and response.text.strip().startswith('<')):
                         _LOGGER.warning("CSRF refresh returned HTML instead of JSON - session may have expired")
+                        _LOGGER.debug("Response text (first 500 chars): %s", response.text[:500] if response.text else "Empty")
                         self.connected = False
-                        return
+                        raise APIAuthError("Session expired - CSRF refresh returned HTML")
+                    
+                    # Check if response is empty
+                    if not response.text or not response.text.strip():
+                        _LOGGER.warning("CSRF refresh returned empty response")
+                        self.connected = False
+                        raise APIAuthError("Session expired - CSRF refresh returned empty response")
                     
                     try:
                         data = response.json()
@@ -355,13 +377,20 @@ class FusionSolarAPI:
                             return
                     except ValueError as json_err:
                         _LOGGER.warning("CSRF refresh response is not valid JSON: %s", json_err)
-                        _LOGGER.debug("Response text (first 200 chars): %s", response.text[:200])
+                        _LOGGER.debug("Response text (first 500 chars): %s", response.text[:500] if response.text else "Empty")
                         self.connected = False
-                        return
+                        raise APIAuthError(f"Session expired - CSRF refresh returned invalid JSON: {json_err}")
                 else:
                     _LOGGER.warning("CSRF refresh failed with status %s", response.status_code)
+                    _LOGGER.debug("Response text (first 500 chars): %s", response.text[:500] if response.text else "Empty")
+                    self.connected = False
+                    raise APIAuthError(f"CSRF refresh failed with status {response.status_code}")
+            except APIAuthError:
+                raise
             except Exception as e:
                 _LOGGER.warning("Could not refresh CSRF token: %s", e)
+                self.connected = False
+                raise APIAuthError(f"CSRF refresh failed: {e}") from e
     
     def _keep_alive_session(self):
         """Keep session alive using events endpoint"""
@@ -401,7 +430,15 @@ class FusionSolarAPI:
         return self.get_station_list()["data"]["list"][0]["dn"]
 
     def get_station_list(self):
-        self.refresh_csrf()
+        if not self.data_host:
+            _LOGGER.error("Cannot get station list: data_host is not set")
+            raise APIAuthError("Data host not set. Login may have failed.")
+        
+        try:
+            self.refresh_csrf()
+        except APIAuthError as e:
+            _LOGGER.error("CSRF refresh failed, cannot get station list: %s", e)
+            raise
 
         station_url = f"https://{self.data_host}/rest/pvms/web/station/v1/station/station-list"
         
@@ -442,13 +479,53 @@ class FusionSolarAPI:
         
         _LOGGER.debug("Getting Station at: %s", station_url)
         station_response = self.session.post(station_url, json=station_payload, headers=station_headers)
-        json_response = station_response.json()
-        _LOGGER.debug("Station info: %s", json_response["data"])
-        return json_response
+        
+        # Check response status
+        if station_response.status_code != 200:
+            _LOGGER.error("Station list request failed with status %s", station_response.status_code)
+            _LOGGER.debug("Response text (first 500 chars): %s", station_response.text[:500] if station_response.text else "Empty")
+            self.connected = False
+            raise APIAuthError(f"Station list request failed with status {station_response.status_code}")
+        
+        # Check if response is empty
+        if not station_response.text or not station_response.text.strip():
+            _LOGGER.error("Station list response is empty")
+            self.connected = False
+            raise APIAuthError("Station list response is empty")
+        
+        # Check if response is HTML (session expired)
+        content_type = station_response.headers.get('content-type', '').lower()
+        if 'text/html' in content_type or (station_response.text and station_response.text.strip().startswith('<')):
+            _LOGGER.error("Station list returned HTML instead of JSON - session may have expired")
+            _LOGGER.debug("Response text (first 500 chars): %s", station_response.text[:500] if station_response.text else "Empty")
+            self.connected = False
+            raise APIAuthError("Session expired - station list returned HTML")
+        
+        # Try to parse JSON
+        try:
+            json_response = station_response.json()
+            _LOGGER.debug("Station info: %s", json_response.get("data", "No data key"))
+            return json_response
+        except ValueError as json_err:
+            _LOGGER.error("Failed to parse station list JSON response: %s", json_err)
+            _LOGGER.error("Response status: %s", station_response.status_code)
+            _LOGGER.error("Response headers: %s", dict(station_response.headers))
+            _LOGGER.error("Response text (first 1000 chars): %s", station_response.text[:1000] if station_response.text else "Empty")
+            _LOGGER.error("Response content type: %s", station_response.headers.get('content-type', 'unknown'))
+            self.connected = False
+            raise APIAuthError(f"Failed to parse station list JSON: {json_err}")
 
     def get_devices(self) -> list[Device]:
         """Get devices - only returns Panel Production Power sensor."""
-        self.refresh_csrf()
+        if not self.data_host:
+            _LOGGER.error("Cannot get devices: data_host is not set")
+            raise APIAuthError("Data host not set. Login may have failed.")
+        
+        try:
+            self.refresh_csrf()
+        except APIAuthError as e:
+            _LOGGER.error("CSRF refresh failed, cannot get devices: %s", e)
+            raise
 
         headers = {
             "Accept": "application/json",
@@ -471,33 +548,51 @@ class FusionSolarAPI:
             "panel_production_power": 0.0,
         }
 
-        if response.status_code == 200:
-            try:
-                data = response.json()
-                _LOGGER.debug("Get Data Response: %s", data)
-            except Exception as ex:
-                _LOGGER.error("Error processing response: JSON format invalid! %s", response.text)
-                raise APIAuthError("Error processing response: JSON format invalid! %s", response.text)
+        if response.status_code != 200:
+            _LOGGER.error("Energy flow request failed with status %s", response.status_code)
+            _LOGGER.debug("Response text (first 500 chars): %s", response.text[:500] if response.text else "Empty")
+            self.connected = False
+            raise APIAuthError(f"Energy flow request failed with status {response.status_code}")
 
-            if "data" not in data or "flow" not in data["data"]:
-                _LOGGER.error("Error on data structure!")
-                raise APIDataStructureError("Error on data structure!")
+        # Check if response is empty
+        if not response.text or not response.text.strip():
+            _LOGGER.error("Energy flow response is empty")
+            self.connected = False
+            raise APIAuthError("Energy flow response is empty")
 
-            # Extract panel production power from nodes
-            flow_data_nodes = data["data"]["flow"].get("nodes", [])
+        # Check if response is HTML (session expired)
+        content_type = response.headers.get('content-type', '').lower()
+        if 'text/html' in content_type or (response.text and response.text.strip().startswith('<')):
+            _LOGGER.error("Energy flow returned HTML instead of JSON - session may have expired")
+            _LOGGER.debug("Response text (first 500 chars): %s", response.text[:500] if response.text else "Empty")
+            self.connected = False
+            raise APIAuthError("Session expired - energy flow returned HTML")
+
+        try:
+            data = response.json()
+            _LOGGER.debug("Get Data Response: %s", data)
+        except ValueError as json_err:
+            _LOGGER.error("Error processing response: JSON format invalid! %s", json_err)
+            _LOGGER.error("Response text (first 1000 chars): %s", response.text[:1000] if response.text else "Empty")
+            self.connected = False
+            raise APIAuthError(f"Error processing response: JSON format invalid! {json_err}")
+
+        if "data" not in data or "flow" not in data["data"]:
+            _LOGGER.error("Error on data structure!")
+            raise APIDataStructureError("Error on data structure!")
+
+        # Extract panel production power from nodes
+        flow_data_nodes = data["data"]["flow"].get("nodes", [])
+        
+        for node in flow_data_nodes:
+            label = node.get("name", "")
+            value = node.get("description", {}).get("value", "")
             
-            for node in flow_data_nodes:
-                label = node.get("name", "")
-                value = node.get("description", {}).get("value", "")
-                
-                if label == "neteco.pvms.devTypeLangKey.string":
-                    output["panel_production_power"] = extract_numeric(value) or 0.0
-                    break
+            if label == "neteco.pvms.devTypeLangKey.string":
+                output["panel_production_power"] = extract_numeric(value) or 0.0
+                break
 
-            _LOGGER.debug("Panel Production Power: %s kW", output["panel_production_power"])
-        else:
-            _LOGGER.error("Error on data structure! %s", response.text)
-            raise APIDataStructureError("Error on data structure! %s", response.text)
+        _LOGGER.debug("Panel Production Power: %s kW", output["panel_production_power"])
 
         """Get devices on api."""
         return [
