@@ -63,8 +63,13 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             # Store the domain and move to credentials step
             self._input_data = user_input
-            _LOGGER.error("CAPTCHA Debug - Domain collected: %s", user_input[FUSION_SOLAR_HOST])
-            return await self.async_step_captcha()
+            _LOGGER.warning("=== USER STEP: Domain collected ===")
+            _LOGGER.warning("USER Step - Domain: %s", user_input[FUSION_SOLAR_HOST])
+            _LOGGER.warning("USER Step - Storing _input_data: %s", self._input_data)
+            _LOGGER.warning("USER Step - About to call async_step_captcha()")
+            result = await self.async_step_captcha()
+            _LOGGER.warning("USER Step - async_step_captcha() returned")
+            return result
 
         # Show domain form
         return self.async_show_form(
@@ -77,6 +82,8 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle the credentials step - username, password, and CAPTCHA."""
+        _LOGGER.warning("=== CAPTCHA STEP: METHOD CALLED ===")
+        _LOGGER.warning("CAPTCHA Step - Method entry, user_input type: %s", type(user_input))
         errors: dict[str, str] = {}
         
         # Get the domain from the previous step
