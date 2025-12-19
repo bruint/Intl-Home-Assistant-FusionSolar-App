@@ -637,17 +637,48 @@ class FusionSolarAPI:
                 "pageSize": 10,
             }
             
-            _LOGGER.warning("Getting device list from: %s", device_list_url)
+            _LOGGER.warning("=== DEVICE LIST: Starting request ===")
+            _LOGGER.warning("Device list - URL: %s", device_list_url)
+            _LOGGER.warning("Device list - Payload: %s", device_list_payload)
+            _LOGGER.warning("Device list - Headers: %s", headers)
+            
             device_list_response = self.session.post(device_list_url, json=device_list_payload, headers=headers)
             
+            _LOGGER.warning("Device list - Response status: %d", device_list_response.status_code)
+            _LOGGER.warning("Device list - Response URL: %s", device_list_response.url)
+            
             if device_list_response.status_code == 200:
-                device_list_data = device_list_response.json()
-                if "data" in device_list_data and "list" in device_list_data["data"] and len(device_list_data["data"]["list"]) > 0:
-                    # Get first device DN (usually the inverter)
-                    device_dn = device_list_data["data"]["list"][0].get("dn")
-                    _LOGGER.warning("Found device DN: %s", device_dn)
+                try:
+                    device_list_data = device_list_response.json()
+                    _LOGGER.warning("=== DEVICE LIST: Full JSON response ===")
+                    _LOGGER.warning("Device list - Full response: %s", json.dumps(device_list_data, indent=2))
+                    
+                    if "data" in device_list_data:
+                        if "list" in device_list_data["data"]:
+                            device_list = device_list_data["data"]["list"]
+                            _LOGGER.warning("Device list - Found %d devices", len(device_list))
+                            
+                            if len(device_list) > 0:
+                                # Get first device DN (usually the inverter)
+                                device_dn = device_list[0].get("dn")
+                                _LOGGER.warning("Device list - Found device DN: %s", device_dn)
+                                _LOGGER.warning("Device list - First device details: %s", json.dumps(device_list[0], indent=2))
+                            else:
+                                _LOGGER.warning("Device list - Device list is empty")
+                        else:
+                            _LOGGER.warning("Device list - No 'list' key in data. Data keys: %s", list(device_list_data["data"].keys()) if isinstance(device_list_data["data"], dict) else "Not a dict")
+                    else:
+                        _LOGGER.warning("Device list - No 'data' key in response. Response keys: %s", list(device_list_data.keys()) if isinstance(device_list_data, dict) else "Not a dict")
+                except ValueError as json_err:
+                    _LOGGER.error("Device list - Failed to parse JSON: %s", json_err)
+                    _LOGGER.error("Device list - Response text (first 1000 chars): %s", device_list_response.text[:1000] if device_list_response.text else "Empty")
+            else:
+                _LOGGER.error("Device list - Request failed with status %d", device_list_response.status_code)
+                _LOGGER.error("Device list - Response text (first 500 chars): %s", device_list_response.text[:500] if device_list_response.text else "Empty")
         except Exception as device_list_err:
-            _LOGGER.warning("Failed to get device list: %s. Will try using station DN directly.", device_list_err)
+            _LOGGER.warning("Device list - Exception occurred: %s", device_list_err)
+            import traceback
+            _LOGGER.warning("Device list - Traceback: %s", traceback.format_exc())
         
         # If we couldn't get device DN from device list, try using station DN directly
         if not device_dn:
