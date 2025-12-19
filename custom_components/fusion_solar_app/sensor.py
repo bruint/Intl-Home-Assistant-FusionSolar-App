@@ -65,7 +65,7 @@ class FusionSolarSensor(CoordinatorEntity, SensorEntity):
         self.async_write_ha_state()
 
     @property
-    def device_class(self) -> str:
+    def device_class(self) -> SensorDeviceClass | None:
         """Return device class."""
         # https://developers.home-assistant.io/docs/core/entity/sensor/#available-device-classes
         if self.device.device_type == DeviceType.SENSOR_KW:
@@ -75,7 +75,7 @@ class FusionSolarSensor(CoordinatorEntity, SensorEntity):
         elif self.device.device_type == DeviceType.SENSOR_TIME:
             return SensorDeviceClass.TIMESTAMP
         else:
-            return SensorDeviceClass.BATTERY
+            return None
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -126,11 +126,11 @@ class FusionSolarSensor(CoordinatorEntity, SensorEntity):
             return "%"
 
     @property
-    def state_class(self) -> str | None:
+    def state_class(self) -> SensorStateClass | None:
         """Return state class."""
         # https://developers.home-assistant.io/docs/core/entity/sensor/#available-state-classes
         if self.device.device_type == DeviceType.SENSOR_TIME:
-            return ""
+            return None
         elif self.device.device_type == DeviceType.SENSOR_KWH:
             # Use TOTAL_INCREASING for real-time energy sensors
             if "(Real-time)" in self.device.device_id:
