@@ -84,6 +84,10 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
         domain = domain_data.get(FUSION_SOLAR_HOST, "")
         
         _LOGGER.warning("=== CAPTCHA STEP: Entry point ===")
+        _LOGGER.warning("CAPTCHA Step - Has _input_data: %s", hasattr(self, '_input_data'))
+        if hasattr(self, '_input_data'):
+            _LOGGER.warning("CAPTCHA Step - _input_data keys: %s", list(self._input_data.keys()) if self._input_data else "None")
+        _LOGGER.warning("CAPTCHA Step - Domain from _input_data: '%s'", domain)
         _LOGGER.warning("CAPTCHA Step - user_input is None: %s", user_input is None)
         if user_input is not None:
             _LOGGER.warning("CAPTCHA Step - Received user_input with keys: %s", list(user_input.keys()))
@@ -292,15 +296,22 @@ class FusionSolarConfigFlow(ConfigFlow, domain=DOMAIN):
                     data=updated_data,
                     reason="reconfigure_successful",
                 )
-            except APIAuthCaptchaError:
+            except APIAuthCaptchaError as captcha_err:
                 _LOGGER.warning("Reconfigure - CAPTCHA required, redirecting to CAPTCHA step")
+                _LOGGER.warning("Reconfigure - APIAuthCaptchaError: %s", captcha_err)
                 _LOGGER.warning("Reconfigure - Storing user_input as _input_data for CAPTCHA step")
+                _LOGGER.warning("Reconfigure - user_input keys: %s", list(user_input.keys()) if user_input else "None")
+                _LOGGER.warning("Reconfigure - Domain in user_input: %s", user_input.get(FUSION_SOLAR_HOST, "NOT FOUND") if user_input else "N/A")
                 # Store the user input so async_step_captcha can access the domain
                 self._input_data = user_input  # Store the original user data
                 # Clear any existing CAPTCHA API instance to force fresh fetch
                 if hasattr(self, '_captcha_api_instance'):
+                    _LOGGER.warning("Reconfigure - Clearing existing _captcha_api_instance")
                     del self._captcha_api_instance
-                return await self.async_step_captcha()
+                _LOGGER.warning("Reconfigure - About to call async_step_captcha()")
+                result = await self.async_step_captcha()
+                _LOGGER.warning("Reconfigure - async_step_captcha() returned")
+                return result
             except APIAuthError as auth_err:
                 _LOGGER.error("Authentication error during reconfigure: %s", auth_err)
                 import traceback
