@@ -611,124 +611,63 @@ class FusionSolarAPI:
             _LOGGER.error("Station not set. Cannot get devices without station information.")
             return []
         
-        # Get device list to find device DN
-        # First, try to get devices from station
+        # Get device DN from station list (devices are included in station list response)
         device_dn = None
         try:
-            device_list_url = f"https://{self.data_host}/rest/pvms/web/device/v1/device-list"
-            headers = {
-                "accept": "application/json, text/javascript, */*; q=0.01",
-                "accept-language": "en-GB,en;q=0.7",
-                "cache-control": "no-cache",
-                "content-type": "application/json",
-                "origin": f"https://{self.data_host}",
-                "pragma": "no-cache",
-                "referer": f"https://{self.data_host}/pvmswebsite/assets/build/index.html",
-                "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
-                "x-non-renewal-session": "true",
-                "x-requested-with": "XMLHttpRequest",
-            }
-            if self.roarand:
-                headers["roarand"] = self.roarand
+            _LOGGER.warning("=== EXTRACTING DEVICE FROM STATION LIST ===")
+            station_data = self.get_station_list()
             
-            # Try different payload formats - some APIs use curPage/pageSize, others use pageNo/pageSize
-            device_list_payload = {
-                "stationDn": self.station,
-                "curPage": 1,
-                "pageSize": 10,
-            }
+            _LOGGER.warning("=== STATION LIST: Full JSON response for device extraction ===")
+            _LOGGER.warning("Station list - Full response: %s", json.dumps(station_data, indent=2))
             
-            _LOGGER.warning("=== DEVICE LIST: Starting request ===")
-            _LOGGER.warning("Device list - URL: %s", device_list_url)
-            _LOGGER.warning("Device list - Payload: %s", device_list_payload)
-            _LOGGER.warning("Device list - Headers: %s", headers)
-            
-            device_list_response = self.session.post(device_list_url, json=device_list_payload, headers=headers)
-            
-            _LOGGER.warning("Device list - Response status: %d", device_list_response.status_code)
-            _LOGGER.warning("Device list - Response URL: %s", device_list_response.url)
-            
-            if device_list_response.status_code == 200:
-                try:
-                    device_list_data = device_list_response.json()
-                    _LOGGER.warning("=== DEVICE LIST: Full JSON response ===")
-                    _LOGGER.warning("Device list - Full response: %s", json.dumps(device_list_data, indent=2))
+            if station_data and "data" in station_data and "list" in station_data["data"]:
+                station_list = station_data["data"]["list"]
+                _LOGGER.warning("Station list - Found %d stations", len(station_list))
+                
+                if len(station_list) > 0:
+                    # Get the first station (should match self.station)
+                    station = station_list[0]
+                    _LOGGER.warning("Station list - Processing station: %s", json.dumps(station, indent=2))
                     
-                    if "data" in device_list_data:
-                        data_section = device_list_data["data"]
+                    # Check if station has devices directly
+                    if "devices" in station:
+                        devices = station["devices"]
+                        _LOGGER.warning("Station list - Found %d devices in station", len(devices) if isinstance(devices, list) else "Not a list")
                         
-                        # Check if data is a list directly
-                        if isinstance(data_section, list) and len(data_section) > 0:
-                            device_list = data_section
-                            _LOGGER.warning("Device list - Found %d devices (data is list)", len(device_list))
-                            
+                        if isinstance(devices, list) and len(devices) > 0:
                             # Look for inverter devices first
-                            for device in device_list:
+                            for device in devices:
                                 device_type = device.get("devTypeId", "").lower() if device.get("devTypeId") else ""
                                 device_dn_candidate = device.get("dn")
-                                _LOGGER.warning("Device list - Checking device: dn=%s, type=%s", device_dn_candidate, device_type)
+                                _LOGGER.warning("Station list - Checking device: dn=%s, type=%s", device_dn_candidate, device_type)
                                 
                                 # Prefer inverter devices (type 1 or contains "inverter")
                                 if "inverter" in device_type or device.get("devTypeId") == "1" or (not device_dn and device_dn_candidate):
                                     device_dn = device_dn_candidate
-                                    _LOGGER.warning("Device list - Selected device DN: %s", device_dn)
-                                    _LOGGER.warning("Device list - Device details: %s", json.dumps(device, indent=2))
+                                    _LOGGER.warning("Station list - Selected device DN: %s", device_dn)
+                                    _LOGGER.warning("Station list - Device details: %s", json.dumps(device, indent=2))
                                     break
                             
                             # If no device selected yet, use first one
-                            if not device_dn and len(device_list) > 0:
-                                device_dn = device_list[0].get("dn")
-                                _LOGGER.warning("Device list - Using first device DN: %s", device_dn)
-                                _LOGGER.warning("Device list - First device details: %s", json.dumps(device_list[0], indent=2))
-                                
-                        elif isinstance(data_section, dict):
-                            # Check for list key
-                            if "list" in data_section:
-                                device_list = data_section["list"]
-                                _LOGGER.warning("Device list - Found %d devices (data.list)", len(device_list))
-                                
-                                if len(device_list) > 0:
-                                    # Look for inverter devices first
-                                    for device in device_list:
-                                        device_type = device.get("devTypeId", "").lower() if device.get("devTypeId") else ""
-                                        device_dn_candidate = device.get("dn")
-                                        _LOGGER.warning("Device list - Checking device: dn=%s, type=%s", device_dn_candidate, device_type)
-                                        
-                                        # Prefer inverter devices
-                                        if "inverter" in device_type or device.get("devTypeId") == "1" or (not device_dn and device_dn_candidate):
-                                            device_dn = device_dn_candidate
-                                            _LOGGER.warning("Device list - Selected device DN: %s", device_dn)
-                                            _LOGGER.warning("Device list - Device details: %s", json.dumps(device, indent=2))
-                                            break
-                                    
-                                    # If no device selected yet, use first one
-                                    if not device_dn:
-                                        device_dn = device_list[0].get("dn")
-                                        _LOGGER.warning("Device list - Using first device DN: %s", device_dn)
-                                        _LOGGER.warning("Device list - First device details: %s", json.dumps(device_list[0], indent=2))
-                                else:
-                                    _LOGGER.warning("Device list - Device list is empty")
-                            else:
-                                _LOGGER.warning("Device list - No 'list' key in data. Data keys: %s", list(data_section.keys()))
-                        else:
-                            _LOGGER.warning("Device list - Data is neither list nor dict: %s", type(data_section))
+                            if not device_dn:
+                                device_dn = devices[0].get("dn")
+                                _LOGGER.warning("Station list - Using first device DN: %s", device_dn)
+                                _LOGGER.warning("Station list - First device details: %s", json.dumps(devices[0], indent=2))
                     else:
-                        _LOGGER.warning("Device list - No 'data' key in response. Response keys: %s", list(device_list_data.keys()) if isinstance(device_list_data, dict) else "Not a dict")
-                except ValueError as json_err:
-                    _LOGGER.error("Device list - Failed to parse JSON: %s", json_err)
-                    _LOGGER.error("Device list - Response text (first 1000 chars): %s", device_list_response.text[:1000] if device_list_response.text else "Empty")
+                        _LOGGER.warning("Station list - Station does not have 'devices' key. Station keys: %s", list(station.keys()))
+                else:
+                    _LOGGER.warning("Station list - Station list is empty")
             else:
-                _LOGGER.error("Device list - Request failed with status %d", device_list_response.status_code)
-                _LOGGER.error("Device list - Response text (first 500 chars): %s", device_list_response.text[:500] if device_list_response.text else "Empty")
-        except Exception as device_list_err:
-            _LOGGER.warning("Device list - Exception occurred: %s", device_list_err)
+                _LOGGER.warning("Station list - Invalid station list structure. Response keys: %s", list(station_data.keys()) if isinstance(station_data, dict) else "Not a dict")
+        except Exception as station_err:
+            _LOGGER.warning("Station list - Exception occurred while extracting device: %s", station_err)
             import traceback
-            _LOGGER.warning("Device list - Traceback: %s", traceback.format_exc())
+            _LOGGER.warning("Station list - Traceback: %s", traceback.format_exc())
         
-        # If we couldn't get device DN from device list, try using station DN directly
+        # If we couldn't get device DN from station list, try using station DN directly
         if not device_dn:
             device_dn = self.station
-            _LOGGER.warning("Using station DN as device DN: %s", device_dn)
+            _LOGGER.warning("Using station DN as device DN (fallback): %s", device_dn)
         
         # Get real-time data for the device
         realtime_url = f"https://{self.data_host}/rest/pvms/web/device/v1/device-realtime-data"
