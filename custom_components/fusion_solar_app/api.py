@@ -30,7 +30,9 @@ class DeviceType(StrEnum):
     SENSOR_TIME = "sensor_time"
 
 DEVICES = [
-    {"id": "Panel Production Power", "type": DeviceType.SENSOR_KW, "icon": "mdi:solar-panel"},
+    {"id": "Panel Production Energy", "type": DeviceType.SENSOR_KW, "icon": "mdi:solar-panel"},
+    {"id": "Load", "type": DeviceType.SENSOR_KW, "icon": "mdi:home-lightning-bolt"},
+    {"id": "Grid", "type": DeviceType.SENSOR_KW, "icon": "mdi:transmission-tower"},
 ]
 
 @dataclass
@@ -646,7 +648,9 @@ class FusionSolarAPI:
         _LOGGER.warning("Energy flow - Response headers: %s", dict(response.headers))
 
         output = {
-            "panel_production_power": 0.0,
+            "panel_production_energy": 0.0,
+            "load": 0.0,
+            "grid": 0.0,
         }
 
         if response.status_code != 200:
@@ -679,75 +683,99 @@ class FusionSolarAPI:
             self.connected = False
             raise APIAuthError(f"Error processing energy flow response: JSON format invalid! {json_err}")
 
-        # Extract Active power from energy flow nodes
-        _LOGGER.warning("=== ENERGY FLOW: Extracting Active power ===")
-        if "data" in data and "flow" in data["data"] and "nodes" in data["data"]["flow"]:
-            nodes = data["data"]["flow"]["nodes"]
-            _LOGGER.warning("Energy flow - Found %d nodes", len(nodes))
+        # Extract values from energy flow nodes and links
+        _LOGGER.warning("=== ENERGY FLOW: Extracting energy values ===")
+        if "data" in data and "flow" in data["data"]:
+            flow = data["data"]["flow"]
+            nodes = flow.get("nodes", [])
+            links = flow.get("links", [])
+            _LOGGER.warning("Energy flow - Found %d nodes and %d links", len(nodes), len(links))
             
-            # Try multiple sources for Active power:
-            # 1. First node (solar panels) - description.value
-            # 2. Inverter node - deviceTips.ACTIVE_POWER
-            # 3. Inverter node - customAttr.10018
-            
+            # Extract values from nodes
             for idx, node in enumerate(nodes):
                 node_name = node.get("name", "")
                 node_id = node.get("id", "")
                 _LOGGER.warning("Energy flow - Processing node %d: id=%s, name='%s'", idx, node_id, node_name)
                 
-                # Check first node (solar panels) for production power
+                # Check first node (solar panels) for production energy
                 if node_id == "0" and node_name == "neteco.pvms.devTypeLangKey.string":
                     description = node.get("description", {})
                     value_str = description.get("value", "")
                     _LOGGER.warning("Energy flow - Node 0 (solar panels) value: %s", value_str)
                     
                     if value_str:
-                        # Extract numeric value from "4.577 kW" format
                         try:
                             numeric_value = extract_numeric(value_str)
                             if numeric_value:
-                                output["panel_production_power"] = float(numeric_value)
-                                _LOGGER.warning("Energy flow - Extracted Active power from node 0: %s kW", output["panel_production_power"])
-                                break
+                                output["panel_production_energy"] = float(numeric_value)
+                                _LOGGER.warning("Energy flow - Extracted Panel Production Energy from node 0: %s kW", output["panel_production_energy"])
                         except (ValueError, TypeError) as conv_err:
                             _LOGGER.warning("Energy flow - Could not convert node 0 value '%s': %s", value_str, conv_err)
                 
-                # Check inverter node for Active power
+                # Check inverter node for Active power (fallback for production)
                 elif "inverter" in node_name.lower() or node_id == "1":
-                    _LOGGER.warning("Energy flow - Found inverter node: %s", json.dumps(node, indent=2))
-                    
-                    # Try deviceTips.ACTIVE_POWER first
                     device_tips = node.get("deviceTips", {})
-                    if "ACTIVE_POWER" in device_tips:
+                    if "ACTIVE_POWER" in device_tips and output["panel_production_energy"] == 0.0:
                         active_power_str = device_tips["ACTIVE_POWER"]
                         _LOGGER.warning("Energy flow - Found ACTIVE_POWER in deviceTips: %s", active_power_str)
                         try:
-                            output["panel_production_power"] = float(active_power_str)
-                            _LOGGER.warning("Energy flow - Extracted Active power from deviceTips: %s kW", output["panel_production_power"])
-                            break
+                            output["panel_production_energy"] = float(active_power_str)
+                            _LOGGER.warning("Energy flow - Extracted Panel Production Energy from deviceTips: %s kW", output["panel_production_energy"])
                         except (ValueError, TypeError) as conv_err:
                             _LOGGER.warning("Energy flow - Could not convert deviceTips ACTIVE_POWER '%s': %s", active_power_str, conv_err)
                     
-                    # Try customAttr.10018
                     custom_attr = node.get("customAttr", {})
-                    if "10018" in custom_attr:
+                    if "10018" in custom_attr and output["panel_production_energy"] == 0.0:
                         active_power_str = custom_attr["10018"]
                         _LOGGER.warning("Energy flow - Found 10018 in customAttr: %s", active_power_str)
                         try:
-                            output["panel_production_power"] = float(active_power_str)
-                            _LOGGER.warning("Energy flow - Extracted Active power from customAttr.10018: %s kW", output["panel_production_power"])
-                            break
+                            output["panel_production_energy"] = float(active_power_str)
+                            _LOGGER.warning("Energy flow - Extracted Panel Production Energy from customAttr.10018: %s kW", output["panel_production_energy"])
                         except (ValueError, TypeError) as conv_err:
                             _LOGGER.warning("Energy flow - Could not convert customAttr.10018 '%s': %s", active_power_str, conv_err)
+                
+                # Check node 5 (electrical load) for Load value
+                elif node_id == "5":
+                    description = node.get("description", {})
+                    value_str = description.get("value", "")
+                    _LOGGER.warning("Energy flow - Node 5 (electrical load) value: %s", value_str)
+                    
+                    if value_str:
+                        try:
+                            numeric_value = extract_numeric(value_str)
+                            if numeric_value:
+                                output["load"] = float(numeric_value)
+                                _LOGGER.warning("Energy flow - Extracted Load from node 5: %s kW", output["load"])
+                        except (ValueError, TypeError) as conv_err:
+                            _LOGGER.warning("Energy flow - Could not convert node 5 value '%s': %s", value_str, conv_err)
+            
+            # Extract Grid value from links (buy power from grid)
+            for link in links:
+                link_id = link.get("id", "")
+                from_node = link.get("fromNode", "")
+                to_node = link.get("toNode", "")
+                description = link.get("description", {})
+                value_str = description.get("value", "")
+                label = description.get("label", "")
+                
+                _LOGGER.warning("Energy flow - Processing link %s: from=%s, to=%s, label='%s', value='%s'", link_id, from_node, to_node, label, value_str)
+                
+                # Grid buy power: link from meter (node 2) to grid (node 3)
+                if from_node == "2" and to_node == "3" and "buy" in label.lower():
+                    if value_str:
+                        try:
+                            numeric_value = extract_numeric(value_str)
+                            if numeric_value:
+                                output["grid"] = float(numeric_value)
+                                _LOGGER.warning("Energy flow - Extracted Grid (buy) from link: %s kW", output["grid"])
+                        except (ValueError, TypeError) as conv_err:
+                            _LOGGER.warning("Energy flow - Could not convert grid link value '%s': %s", value_str, conv_err)
         else:
-            _LOGGER.warning("Energy flow - No flow.nodes found. Response structure: %s", list(data.keys()) if isinstance(data, dict) else "Not a dict")
+            _LOGGER.warning("Energy flow - No flow data found. Response structure: %s", list(data.keys()) if isinstance(data, dict) else "Not a dict")
             if "data" in data:
                 _LOGGER.warning("Energy flow - Data keys: %s", list(data["data"].keys()) if isinstance(data["data"], dict) else "Not a dict")
         
-        if output["panel_production_power"] == 0.0:
-            _LOGGER.warning("Energy flow - Active power not found or is 0.0. Final output: %s", output)
-        else:
-            _LOGGER.warning("Energy flow - Successfully extracted Active power: %s kW", output["panel_production_power"])
+        _LOGGER.warning("Energy flow - Final extracted values: %s", output)
 
         """Get devices on api."""
         return [
