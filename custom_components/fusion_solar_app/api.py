@@ -735,7 +735,7 @@ class FusionSolarAPI:
                             _LOGGER.warning("Energy flow - Could not convert customAttr.10018 '%s': %s", active_power_str, conv_err)
                 
                 # Check node 5 (electrical load) for Load value
-                elif node_id == "5":
+                elif node_id == "5" and "electricalLoad" in node_name:
                     description = node.get("description", {})
                     value_str = description.get("value", "")
                     _LOGGER.warning("Energy flow - Node 5 (electrical load) value: %s", value_str)
@@ -749,7 +749,8 @@ class FusionSolarAPI:
                         except (ValueError, TypeError) as conv_err:
                             _LOGGER.warning("Energy flow - Could not convert node 5 value '%s': %s", value_str, conv_err)
             
-            # Extract Grid value from links (buy power from grid)
+            # Extract Grid value from links
+            # Positive = exporting to grid, Negative = importing from grid
             for link in links:
                 link_id = link.get("id", "")
                 from_node = link.get("fromNode", "")
@@ -760,14 +761,27 @@ class FusionSolarAPI:
                 
                 _LOGGER.warning("Energy flow - Processing link %s: from=%s, to=%s, label='%s', value='%s'", link_id, from_node, to_node, label, value_str)
                 
-                # Grid buy power: link from meter (node 2) to grid (node 3)
-                if from_node == "2" and to_node == "3" and "buy" in label.lower():
+                # Grid power: link from meter (node 2) to grid (node 3)
+                # "buy.power" means importing (negative), but we want positive = export
+                if from_node == "2" and to_node == "3" and "buy.power" in label:
                     if value_str:
                         try:
                             numeric_value = extract_numeric(value_str)
                             if numeric_value:
+                                # Negate buy power so positive = export, negative = import
+                                output["grid"] = -float(numeric_value)
+                                _LOGGER.warning("Energy flow - Extracted Grid from link (buy.power): %s kW (negative = import)", output["grid"])
+                        except (ValueError, TypeError) as conv_err:
+                            _LOGGER.warning("Energy flow - Could not convert grid link value '%s': %s", value_str, conv_err)
+                # Check for sell/export link (if it exists)
+                elif from_node == "2" and to_node == "3" and ("sell" in label.lower() or "export" in label.lower()):
+                    if value_str:
+                        try:
+                            numeric_value = extract_numeric(value_str)
+                            if numeric_value:
+                                # Positive value for export
                                 output["grid"] = float(numeric_value)
-                                _LOGGER.warning("Energy flow - Extracted Grid (buy) from link: %s kW", output["grid"])
+                                _LOGGER.warning("Energy flow - Extracted Grid from link (sell/export): %s kW (positive = export)", output["grid"])
                         except (ValueError, TypeError) as conv_err:
                             _LOGGER.warning("Energy flow - Could not convert grid link value '%s': %s", value_str, conv_err)
         else:
