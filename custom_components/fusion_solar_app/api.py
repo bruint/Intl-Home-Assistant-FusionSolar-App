@@ -62,8 +62,6 @@ class FusionSolarAPI:
         self.last_session_time: datetime | None = None
         self._session_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
-        self.csrf = None
-        self.csrf_time = None
         self.user_id = None  # Dynamic user ID
         self.session = requests.Session()  # Use session for cookie persistence
         
@@ -248,13 +246,12 @@ class FusionSolarAPI:
                 self.connected = True
                 self.last_session_time = datetime.now(timezone.utc)
                 
-                # Get user ID and CSRF tokens
-                # Note: refresh_csrf() requires data_host to be set, which we just set above
+                # Get user ID and keep session alive
                 self._get_user_id()
                 try:
-                    self.refresh_csrf()
-                except APIAuthError as csrf_err:
-                    _LOGGER.error("CSRF refresh failed during login: %s", csrf_err)
+                    self.refresh_csrf()  # This now uses events endpoint to keep session alive
+                except APIAuthError as keep_alive_err:
+                    _LOGGER.error("Session keep-alive failed during login: %s", keep_alive_err)
                     self.connected = False
                     raise
                 
@@ -351,80 +348,57 @@ class FusionSolarAPI:
             _LOGGER.warning("API - Response text: %s", response.text[:200] if response.text else "Empty")
 
     def refresh_csrf(self):
-        """Refresh CSRF token (roarand) for main API endpoints"""
-        _LOGGER.info("Refresh CSRF called - Current CSRF: %s, Time since last refresh: %s", 
-                     self.csrf, datetime.now() - self.csrf_time if self.csrf_time else "Never")
-        
+        """Keep session alive using events endpoint (replaces old CSRF refresh)"""
         if not self.data_host:
-            _LOGGER.warning("Cannot refresh CSRF: data_host is not set")
+            _LOGGER.warning("Cannot keep session alive: data_host is not set")
             self.connected = False
-            raise APIAuthError("Cannot refresh CSRF: data_host is not set. Login may have failed or session expired.")
+            raise APIAuthError("Cannot keep session alive: data_host is not set. Login may have failed or session expired.")
         
-        if self.csrf is None or datetime.now() - self.csrf_time > timedelta(minutes=5):
-            _LOGGER.warning("=== CSRF REFRESH: Starting ===")
-            _LOGGER.warning("CSRF - data_host: %s", self.data_host)
-            _LOGGER.warning("CSRF - Session cookies: %s", self._get_cookies_safe())
-            _LOGGER.warning("CSRF - bspsession cookie: %s", self.bspsession)
-            _LOGGER.info("CSRF token needs refresh")
-            endpoint = f"https://{self.data_host}/rest/neteco/auth/v1/keep-alive"
+        _LOGGER.warning("=== SESSION KEEP-ALIVE: Starting ===")
+        _LOGGER.warning("Keep-Alive - data_host: %s", self.data_host)
+        _LOGGER.warning("Keep-Alive - Session cookies: %s", self._get_cookies_safe())
+        _LOGGER.warning("Keep-Alive - bspsession cookie: %s", self.bspsession)
+        
+        try:
+            events_url = f"https://{self.data_host}/rest/sysfenw/v1/events"
+            params = {
+                'indexes': '[4291350,4291350,4291350,4291350,4291350,4291350,4291350,4291350,4291350]',
+                'eventIds': '["CloudSOP.sm.privilge.permission.changed","CloudSOP.sm.user.policy.changed","SECONDARY_AUTH_REQUEST_EVENT","cloudsop.fm.website.i18n.refresh","cloudsop.fm.website.alarm.prompt.enabled","cloudsop.fm.website.keytemplate.change","cloudsop.fm.website.alarm.silence.start","cloudsop.fm.website.alarm.silence.stop","cloudsop.sysBroadcast.broadcast"]',
+                't': int(time.time() * 1000)
+            }
             
-            try:
-                headers = {
-                    "accept": "application/json, text/plain, */*",
-                    "accept-encoding": "gzip, deflate, br, zstd",
-                    "Referer": f"https://{self.data_host}/pvmswebsite/assets/build/index.html"
-                }
-                
-                _LOGGER.warning("CSRF - Requesting from endpoint: %s", endpoint)
-                _LOGGER.warning("CSRF - Request headers: %s", headers)
-                response = self.session.get(endpoint, headers=headers)
-                _LOGGER.warning("CSRF - Response status: %d", response.status_code)
-                _LOGGER.warning("CSRF - Response URL: %s", response.url)
-                _LOGGER.warning("CSRF - Response headers: %s", dict(response.headers))
-                
-                if response.status_code == 200:
-                    # Check if response is HTML (session expired)
-                    content_type = response.headers.get('content-type', '').lower()
-                    if 'text/html' in content_type or (response.text and response.text.strip().startswith('<')):
-                        _LOGGER.warning("CSRF refresh returned HTML instead of JSON - session may have expired")
-                        _LOGGER.debug("Response text (first 500 chars): %s", response.text[:500] if response.text else "Empty")
-                        self.connected = False
-                        raise APIAuthError("Session expired - CSRF refresh returned HTML")
-                    
-                    # Check if response is empty
-                    if not response.text or not response.text.strip():
-                        _LOGGER.warning("CSRF refresh returned empty response")
-                        self.connected = False
-                        raise APIAuthError("Session expired - CSRF refresh returned empty response")
-                    
-                    try:
-                        data = response.json()
-                        if 'payload' in data:
-                            self.csrf = data['payload']
-                            self.csrf_time = datetime.now()
-                            _LOGGER.debug(f"CSRF refreshed: {self.csrf}")
-                            return
-                        elif 'csrfToken' in data:
-                            self.csrf = data['csrfToken']
-                            self.csrf_time = datetime.now()
-                            _LOGGER.info("CSRF refreshed successfully: %s", self.csrf)
-                            return
-                    except ValueError as json_err:
-                        _LOGGER.warning("CSRF refresh response is not valid JSON: %s", json_err)
-                        _LOGGER.debug("Response text (first 500 chars): %s", response.text[:500] if response.text else "Empty")
-                        self.connected = False
-                        raise APIAuthError(f"Session expired - CSRF refresh returned invalid JSON: {json_err}")
-                else:
-                    _LOGGER.warning("CSRF refresh failed with status %s", response.status_code)
-                    _LOGGER.debug("Response text (first 500 chars): %s", response.text[:500] if response.text else "Empty")
-                    self.connected = False
-                    raise APIAuthError(f"CSRF refresh failed with status {response.status_code}")
-            except APIAuthError:
-                raise
-            except Exception as e:
-                _LOGGER.warning("Could not refresh CSRF token: %s", e)
+            headers = {
+                'accept': '*/*',
+                'accept-language': 'en-GB,en;q=0.7',
+                'cache-control': 'no-cache',
+                'origin': f'https://{self.data_host}',
+                'pragma': 'no-cache',
+                'referer': f'https://{self.data_host}/pvmswebsite/assets/build/index.html',
+                'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+                'x-non-renewal-session': 'true',
+                'x-requested-with': 'XMLHttpRequest'
+            }
+            
+            _LOGGER.warning("Keep-Alive - Requesting from endpoint: %s", events_url)
+            _LOGGER.warning("Keep-Alive - Request params: %s", params)
+            response = self.session.get(events_url, headers=headers, params=params)
+            _LOGGER.warning("Keep-Alive - Response status: %d", response.status_code)
+            _LOGGER.warning("Keep-Alive - Response URL: %s", response.url)
+            
+            if response.status_code == 200:
+                _LOGGER.warning("Keep-Alive: SUCCESS")
+                return
+            else:
+                _LOGGER.error("Keep-Alive failed with status %d", response.status_code)
+                _LOGGER.error("Keep-Alive - Response text (first 500 chars): %s", response.text[:500] if response.text else "Empty")
                 self.connected = False
-                raise APIAuthError(f"CSRF refresh failed: {e}") from e
+                raise APIAuthError(f"Session keep-alive failed with status {response.status_code}")
+        except APIAuthError:
+            raise
+        except Exception as e:
+            _LOGGER.error("Could not keep session alive: %s", e)
+            self.connected = False
+            raise APIAuthError(f"Session keep-alive failed: {e}") from e
     
     def _keep_alive_session(self):
         """Keep session alive using events endpoint"""
@@ -469,9 +443,9 @@ class FusionSolarAPI:
             raise APIAuthError("Data host not set. Login may have failed.")
         
         try:
-            self.refresh_csrf()
+            self.refresh_csrf()  # Keep session alive
         except APIAuthError as e:
-            _LOGGER.error("CSRF refresh failed, cannot get station list: %s", e)
+            _LOGGER.error("Session keep-alive failed, cannot get station list: %s", e)
             raise
 
         station_url = f"https://{self.data_host}/rest/pvms/web/station/v1/station/station-list"
@@ -494,8 +468,6 @@ class FusionSolarAPI:
             "x-timezone-offset": "480"
         }
         
-        if self.csrf:
-            station_headers["roarand"] = self.csrf
         
         # Use SG5/INTL timezone (Asia/Singapore)
         timezone_offset = 8
@@ -556,9 +528,9 @@ class FusionSolarAPI:
             raise APIAuthError("Data host not set. Login may have failed.")
         
         try:
-            self.refresh_csrf()
+            self.refresh_csrf()  # Keep session alive
         except APIAuthError as e:
-            _LOGGER.error("CSRF refresh failed, cannot get devices: %s", e)
+            _LOGGER.error("Session keep-alive failed, cannot get devices: %s", e)
             raise
 
         headers = {
