@@ -148,7 +148,7 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
         try:
             if not self.api.connected:
                 # First, try to validate/refresh the existing session before attempting login
-                # This avoids unnecessary CAPTCHA requirements if the session is still valid
+                # This avoids unnecessary login attempts if the session is still valid
                 if self.api.data_host and self.api.session.cookies:
                     _LOGGER.info("Not connected, but have data_host and cookies - attempting to refresh session")
                     try:
@@ -158,17 +158,25 @@ class FusionSolarCoordinator(DataUpdateCoordinator):
                         _LOGGER.info("Session refreshed successfully - no login needed")
                     except Exception as refresh_err:
                         _LOGGER.warning("Session refresh failed: %s. Will attempt login.", refresh_err)
-                        # Session refresh failed, need to login (but this will require CAPTCHA)
-                        _LOGGER.warning("Login will be required, but CAPTCHA is needed. Integration will be unavailable until reconfigured.")
-                        raise APIAuthCaptchaError("Session expired and login requires CAPTCHA")
+                        # Session refresh failed, but don't assume CAPTCHA is needed yet
+                        # Try login first - it may succeed without CAPTCHA
                 
                 if not self.api.connected:
-                    _LOGGER.info("Not connected and no valid session, attempting login")
+                    _LOGGER.info("Not connected, attempting login")
                     # Ensure CAPTCHA input is cleared - coordinator should never use stored CAPTCHA codes
                     self.api.captcha_input = None
                     _LOGGER.info("Coordinator - Cleared CAPTCHA input before login attempt (captcha_input: %s)", self.api.captcha_input)
-                    await self.hass.async_add_executor_job(self.api.login)
-                    _LOGGER.info("Login completed - connected: %s", self.api.connected)
+                    try:
+                        await self.hass.async_add_executor_job(self.api.login)
+                        _LOGGER.info("Login completed - connected: %s", self.api.connected)
+                    except APIAuthCaptchaError:
+                        # Login requires CAPTCHA - re-raise to be handled below
+                        _LOGGER.warning("Login requires CAPTCHA - cannot auto-login. User must reconfigure integration.")
+                        raise
+                    except APIAuthError as login_err:
+                        # Other auth errors - log and re-raise to be handled below
+                        _LOGGER.warning("Login failed: %s", login_err)
+                        raise
             
             # If we have a session but no station data, retrieve it now
             if self.api.connected and self.api.station is None:
